@@ -26,7 +26,7 @@ public sealed class MasterServer : IDisposable
         _peerManager = new PeerManager(TimeSpan.FromSeconds(30), logService);
         _lobbyManager = new LobbyManager(TimeSpan.FromMinutes(5), logService);
         _gameserverManager = new GameserverManager(TimeSpan.FromMinutes(10), logService);
-        _p2PRelayManager = new P2PRelayManager(TimeSpan.FromMinutes(5), _peerManager, logService);
+        _p2PRelayManager = new P2PRelayManager(TimeSpan.FromMinutes(5), logService);
         _messageHandler = new MessageHandler(_peerManager, _networkService, _lobbyManager, _gameserverManager,
             _p2PRelayManager, logService);
 

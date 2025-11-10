@@ -1,6 +1,4 @@
 using System.Collections.Concurrent;
-using GoldbergMasterServer.Models;
-using GoldbergMasterServer.Network;
 
 namespace GoldbergMasterServer.Services;
 
@@ -9,25 +7,24 @@ namespace GoldbergMasterServer.Services;
 /// </summary>
 public class P2PRelayManager
 {
-    private readonly LogService _logService;
-    private readonly PeerManager _peerManager;
     private readonly ConcurrentDictionary<ulong, P2PConnection> _connections = new();
-    private readonly ConcurrentDictionary<ulong, HashSet<ulong>> _peerConnections = new();
     private readonly TimeSpan _connectionTimeout;
     private readonly object _lock = new();
+    private readonly LogService _logService;
+    private readonly ConcurrentDictionary<ulong, HashSet<ulong>> _peerConnections = new();
     private bool _isShutdown;
     private ulong _nextConnectionId = 1;
+    private long _totalBytesRelayed;
 
     // Statistics
     private long _totalPacketsRelayed;
-    private long _totalBytesRelayed;
 
-    public P2PRelayManager(TimeSpan connectionTimeout, PeerManager peerManager, LogService logService)
+    public P2PRelayManager(TimeSpan connectionTimeout, LogService logService)
     {
         _connectionTimeout = connectionTimeout;
-        _peerManager = peerManager;
         _logService = logService;
-        _logService.Debug($"P2P Relay manager initialized with {_connectionTimeout.TotalSeconds}s timeout", "P2PRelayManager");
+        _logService.Debug($"P2P Relay manager initialized with {_connectionTimeout.TotalSeconds}s timeout",
+            "P2PRelayManager");
     }
 
     /// <summary>
@@ -40,15 +37,14 @@ public class P2PRelayManager
         // Check if connection already exists
         var existingConnectionId = FindConnection(fromPeerId, toPeerId, type);
         if (existingConnectionId != 0)
-        {
             // Update last activity
             if (_connections.TryGetValue(existingConnectionId, out var existing))
             {
                 existing.LastActivity = DateTime.UtcNow;
-                _logService.Debug($"Reusing existing connection {existingConnectionId}: {fromPeerId} -> {toPeerId}", "P2PRelayManager");
+                _logService.Debug($"Reusing existing connection {existingConnectionId}: {fromPeerId} -> {toPeerId}",
+                    "P2PRelayManager");
                 return existingConnectionId;
             }
-        }
 
         // Create new connection
         var connectionId = Interlocked.Increment(ref _nextConnectionId);
@@ -74,6 +70,7 @@ public class P2PRelayManager
                 fromConnections = [];
                 _peerConnections[fromPeerId] = fromConnections;
             }
+
             fromConnections.Add(connectionId);
 
             if (!_peerConnections.TryGetValue(toPeerId, out var toConnections))
@@ -81,6 +78,7 @@ public class P2PRelayManager
                 toConnections = [];
                 _peerConnections[toPeerId] = toConnections;
             }
+
             toConnections.Add(connectionId);
         }
 
@@ -104,17 +102,11 @@ public class P2PRelayManager
                 return 0;
 
             foreach (var connectionId in connections)
-            {
                 if (_connections.TryGetValue(connectionId, out var connection))
-                {
                     if (connection.Type == type &&
                         ((connection.FromPeerId == fromPeerId && connection.ToPeerId == toPeerId) ||
                          (connection.FromPeerId == toPeerId && connection.ToPeerId == fromPeerId)))
-                    {
                         return connectionId;
-                    }
-                }
-            }
         }
 
         return 0;
@@ -195,14 +187,10 @@ public class P2PRelayManager
             lock (_lock)
             {
                 if (_peerConnections.TryGetValue(connection.FromPeerId, out var fromConnections))
-                {
                     fromConnections.Remove(connectionId);
-                }
 
                 if (_peerConnections.TryGetValue(connection.ToPeerId, out var toConnections))
-                {
                     toConnections.Remove(connectionId);
-                }
             }
 
             _logService.Info(
@@ -228,23 +216,16 @@ public class P2PRelayManager
 
         lock (_lock)
         {
-            if (_peerConnections.TryGetValue(peerId, out var connections))
-            {
-                connectionsToClose.AddRange(connections);
-            }
+            if (_peerConnections.TryGetValue(peerId, out var connections)) connectionsToClose.AddRange(connections);
         }
 
         var closedCount = 0;
         foreach (var connectionId in connectionsToClose)
-        {
             if (CloseConnection(connectionId, reason))
                 closedCount++;
-        }
 
         if (closedCount > 0)
-        {
             _logService.Info($"Closed {closedCount} connection(s) for peer {peerId}", "P2PRelayManager");
-        }
 
         return closedCount;
     }
@@ -261,15 +242,9 @@ public class P2PRelayManager
         lock (_lock)
         {
             if (_peerConnections.TryGetValue(peerId, out var connectionIds))
-            {
                 foreach (var connectionId in connectionIds)
-                {
                     if (_connections.TryGetValue(connectionId, out var connection))
-                    {
                         result.Add(connection);
-                    }
-                }
-            }
         }
 
         return result;
@@ -286,22 +261,14 @@ public class P2PRelayManager
         var connectionsToClose = new List<ulong>();
 
         foreach (var (connectionId, connection) in _connections)
-        {
             if (connection.LastActivity < cutoff)
-            {
                 connectionsToClose.Add(connectionId);
-            }
-        }
 
-        foreach (var connectionId in connectionsToClose)
-        {
-            CloseConnection(connectionId, "Timeout");
-        }
+        foreach (var connectionId in connectionsToClose) CloseConnection(connectionId, "Timeout");
 
         if (connectionsToClose.Count > 0)
-        {
-            _logService.Info($"Cleanup complete: Closed {connectionsToClose.Count} stale connection(s)", "P2PRelayManager");
-        }
+            _logService.Info($"Cleanup complete: Closed {connectionsToClose.Count} stale connection(s)",
+                "P2PRelayManager");
     }
 
     /// <summary>
