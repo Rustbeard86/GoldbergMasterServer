@@ -9,12 +9,12 @@ namespace GoldbergMasterServer;
 public sealed class MasterServer : IDisposable
 {
     private readonly Timer _cleanupTimer;
-    private readonly LobbyManager _lobbyManager;
     private readonly GameserverManager _gameserverManager;
-    private readonly P2PRelayManager _p2pRelayManager;
+    private readonly LobbyManager _lobbyManager;
     private readonly LogService _logService;
     private readonly MessageHandler _messageHandler;
     private readonly NetworkService _networkService;
+    private readonly P2PRelayManager _p2PRelayManager;
     private readonly PeerManager _peerManager;
     private bool _disposed;
     private volatile bool _isRunning = true;
@@ -26,8 +26,9 @@ public sealed class MasterServer : IDisposable
         _peerManager = new PeerManager(TimeSpan.FromSeconds(30), logService);
         _lobbyManager = new LobbyManager(TimeSpan.FromMinutes(5), logService);
         _gameserverManager = new GameserverManager(TimeSpan.FromMinutes(10), logService);
-        _p2pRelayManager = new P2PRelayManager(TimeSpan.FromMinutes(5), _peerManager, logService);
-        _messageHandler = new MessageHandler(_peerManager, _networkService, _lobbyManager, _gameserverManager, _p2pRelayManager, logService);
+        _p2PRelayManager = new P2PRelayManager(TimeSpan.FromMinutes(5), _peerManager, logService);
+        _messageHandler = new MessageHandler(_peerManager, _networkService, _lobbyManager, _gameserverManager,
+            _p2PRelayManager, logService);
 
         _logService.Info($"Server initialized on UDP port {port}", "MasterServer");
 
@@ -36,7 +37,7 @@ public sealed class MasterServer : IDisposable
         {
             _peerManager.CleanupStaleMembers();
             _gameserverManager.CleanupStaleServers();
-            _p2pRelayManager.CleanupStaleConnections();
+            _p2PRelayManager.CleanupStaleConnections();
         }, null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
     }
 
@@ -64,7 +65,7 @@ public sealed class MasterServer : IDisposable
             _peerManager.Shutdown();
             _lobbyManager.Shutdown();
             _gameserverManager.Shutdown();
-            _p2pRelayManager.Shutdown();
+            _p2PRelayManager.Shutdown();
         }
 
         _disposed = true;
@@ -77,7 +78,7 @@ public sealed class MasterServer : IDisposable
     {
         _logService.Info("Stop signal received, shutting down network listener...", "MasterServer");
         _isRunning = false;
-        
+
         // Close the network service to interrupt the ReceiveAsync() call
         _networkService.Dispose();
     }
