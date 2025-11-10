@@ -55,6 +55,14 @@ public class LobbyManager
     /// <summary>
     ///     Gets all lobbies for a specific app
     /// </summary>
+    /// <param name="appId">The Steam AppID to filter lobbies by</param>
+    /// <returns>Enumerable of non-deleted lobbies for the specified app</returns>
+    /// <remarks>
+    ///     Used for lobby browser and discovery features (Phase 3).
+    ///     Currently unused but provides basic lobby listing without advanced filtering.
+    ///     For filtered queries, use FindLobbies() instead.
+    ///     Thread-safe for concurrent access.
+    /// </remarks>
     public IEnumerable<Lobby> GetLobbiesForApp(uint appId)
     {
         return _lobbies.Values.Where(l => l.Appid == appId && !l.Deleted);
@@ -112,6 +120,18 @@ public class LobbyManager
     /// <summary>
     ///     Gets all lobbies that a user is a member of
     /// </summary>
+    /// <param name="userId">The Steam user ID to look up lobbies for</param>
+    /// <returns>Enumerable of active lobbies the user is a member of</returns>
+    /// <remarks>
+    ///     Used for user session management and lobby reconnection (Phase 3).
+    ///     Currently unused but essential for tracking user's active lobby memberships.
+    ///     Useful for:
+    ///     - Displaying user's current lobbies in UI
+    ///     - Reconnecting to lobbies after disconnect
+    ///     - Preventing duplicate lobby joins
+    ///     - User session state management
+    ///     Thread-safe for concurrent access.
+    /// </remarks>
     public IEnumerable<Lobby> GetUserLobbies(ulong userId)
     {
         if (_isShutdown) return [];
