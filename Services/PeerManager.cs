@@ -77,22 +77,26 @@ public class PeerManager
         var cutoff = DateTime.UtcNow - _peerTimeout;
         var totalRemoved = 0;
 
-        foreach (var appPeers in _peersByApp.Values)
+        foreach (var (appId, appPeers) in _peersByApp)
         {
             var stalePeers = appPeers.Values
                 .Where(p => p.LastSeen < cutoff)
-                .Select(p => p.SteamId)
                 .ToList();
 
-            foreach (var steamId in stalePeers)
+            foreach (var stalePeer in stalePeers)
             {
-                appPeers.TryRemove(steamId, out _);
-                totalRemoved++;
+                if (appPeers.TryRemove(stalePeer.SteamId, out _))
+                {
+                    totalRemoved++;
+                    _logService.Info($"Peer disconnected (timeout): SteamID={stalePeer.SteamId}, AppID={appId}, LastSeen={stalePeer.LastSeen:HH:mm:ss}", "PeerManager");
+                }
             }
         }
 
         if (totalRemoved > 0)
-            _logService.Debug($"Cleaned up {totalRemoved} stale peers", "PeerManager");
+        {
+            _logService.Info($"Cleanup complete: Removed {totalRemoved} stale peer(s)", "PeerManager");
+        }
     }
 
     public void Shutdown()

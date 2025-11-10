@@ -74,6 +74,12 @@ public sealed class NetworkService : IDisposable
 
             return (result.Buffer, result.RemoteEndPoint);
         }
+        catch (SocketException ex) when (_disposed && (ex.ErrorCode == 995 || ex.ErrorCode == 10004))
+        {
+            // Socket was closed during shutdown - this is expected, rethrow to be handled by caller
+            _logService.Debug($"Socket receive cancelled during shutdown (ErrorCode={ex.ErrorCode})", "Network.Shutdown");
+            throw;
+        }
         catch (SocketException ex)
         {
             _logService.Error($"Socket error while receiving data: {ex.Message} (ErrorCode={ex.ErrorCode})", "Network.Error");

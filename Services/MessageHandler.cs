@@ -20,7 +20,7 @@ public class MessageHandler(
         {
             var message = Common_Message.Parser.ParseFrom(buffer);
 
-            logService.Debug($"Received message type {message.MessagesCase} from {message.SourceId}", "MessageHandler");
+            logService.Info($"Message from SteamID {message.SourceId} at {remoteEndPoint}: Type={message.MessagesCase}", "MessageHandler");
 
             // Use a switch to handle all relevant message types
             switch (message.MessagesCase)
@@ -40,21 +40,21 @@ public class MessageHandler(
                     break;
 
                 case Common_Message.MessagesOneofCase.None:
-                    // Ignore empty messages
+                    logService.Warning($"Received empty message from {remoteEndPoint}", "MessageHandler");
                     break;
 
                 default:
-                    logService.Warning($"Unhandled message type: {message.MessagesCase}", "MessageHandler");
+                    logService.Warning($"Unhandled message type: {message.MessagesCase} from {remoteEndPoint}", "MessageHandler");
                     break;
             }
         }
-        catch (InvalidProtocolBufferException)
+        catch (InvalidProtocolBufferException ex)
         {
-            logService.Warning($"Invalid protocol buffer message from {remoteEndPoint}", "MessageHandler");
+            logService.Warning($"Invalid protocol buffer message from {remoteEndPoint}: {ex.Message}", "MessageHandler");
         }
         catch (Exception e)
         {
-            logService.Error($"Error processing packet: {e.Message}", "MessageHandler");
+            logService.Error($"Error processing packet from {remoteEndPoint}: {e.Message}", "MessageHandler");
         }
     }
 
@@ -69,9 +69,20 @@ public class MessageHandler(
             LastSeen = DateTime.UtcNow
         };
 
+        var isNewPeer = peerManager.GetPeer(peer.SteamId) == null;
         peerManager.AddOrUpdatePeer(peer);
 
-        var peers = peerManager.GetPeersForApp(peer.AppId, peer.SteamId);
+        if (isNewPeer)
+        {
+            logService.Info($"New peer connected: SteamID={peer.SteamId}, AppID={peer.AppId}, Endpoint={remoteEndPoint}", "MessageHandler");
+        }
+        else
+        {
+            logService.Debug($"Peer heartbeat: SteamID={peer.SteamId}", "MessageHandler");
+        }
+
+        var peers = peerManager.GetPeersForApp(peer.AppId, peer.SteamId).ToList();
+        logService.Debug($"Sending pong with {peers.Count} peers for AppID {peer.AppId}", "MessageHandler");
         await networkService.SendPongMessageAsync(peer, peers);
     }
 
