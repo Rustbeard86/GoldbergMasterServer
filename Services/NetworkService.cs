@@ -242,6 +242,25 @@ public sealed class NetworkService : IDisposable
     /// <summary>
     ///     Sends a gameserver list response to a peer
     /// </summary>
+    /// <param name="servers">Enumerable collection of gameservers to send</param>
+    /// <param name="recipient">The peer requesting the server list</param>
+    /// <remarks>
+    ///     Planned for Phase 2.2 - Server Browser Support.
+    ///     
+    ///     This method will be used when implementing server discovery/browser functionality where:
+    ///     - Clients request available game servers for a specific AppID
+    ///     - Master server queries GameserverManager.FindServers() with filters
+    ///     - Results are sent to the requesting client using this method
+    ///     
+    ///     Each server is sent as a separate UDP packet to avoid fragmentation issues.
+    ///     
+    ///     Future integration point in MessageHandler:
+    ///     - Add new message type for server list requests (e.g., Gameserver_Query)
+    ///     - Call GameserverManager.FindServers() with client-specified filters
+    ///     - Pass results to this method for transmission
+    ///     
+    ///     Currently unused - will be activated when server browser protocol is implemented.
+    /// </remarks>
     public async Task SendGameserverListAsync(IEnumerable<Gameserver> servers, Peer recipient)
     {
         ObjectDisposedException.ThrowIf(_disposed, nameof(NetworkService));
