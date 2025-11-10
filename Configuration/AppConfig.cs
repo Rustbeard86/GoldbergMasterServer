@@ -5,10 +5,20 @@ namespace GoldbergMasterServer.Configuration;
 /// </summary>
 public sealed class ServerConfig
 {
-    public required int Port { get; set; }
-    public required int PeerCleanupIntervalSeconds { get; set; }
-    public required int PeerTimeoutSeconds { get; set; }
-    public required ulong MasterServerSteamId { get; set; }
+    private const ulong DefaultMasterServerSteamId = 0x100001DEADBEEF;
+
+    public int Port { get; set; } = 47584;
+    public int PeerCleanupIntervalSeconds { get; set; } = 10;
+    public int PeerTimeoutSeconds { get; set; } = 30;
+    public ulong MasterServerSteamId { get; set; } = DefaultMasterServerSteamId;
+}
+
+/// <summary>
+///     Individual log level configuration
+/// </summary>
+public sealed class LogCategoryConfig(LogLevel level = LogLevel.Information)
+{
+    public LogLevel Level { get; set; } = level;
 }
 
 /// <summary>
@@ -16,9 +26,17 @@ public sealed class ServerConfig
 /// </summary>
 public sealed class LogLevelConfig
 {
-    public required string Default { get; set; }
-    public required string Microsoft { get; set; }
-    public required string System { get; set; }
+    public LogCategoryConfig Default { get; set; } = new();
+
+    public LogCategoryConfig Microsoft { get; set; } = new(LogLevel.Warning);
+
+    public LogCategoryConfig System { get; set; } = new(LogLevel.Warning);
+
+    public LogCategoryConfig Network { get; set; } = new();
+
+    public LogCategoryConfig PeerManagement { get; set; } = new();
+
+    public LogCategoryConfig Authentication { get; set; } = new();
 }
 
 /// <summary>
@@ -26,7 +44,13 @@ public sealed class LogLevelConfig
 /// </summary>
 public sealed class DebugConfig
 {
-    public required bool EnableDebug { get; set; }
+    public bool EnableDebug { get; set; } = false;
+
+    public bool LogNetworkPackets { get; set; } = false;
+
+    public bool LogPeerEvents { get; set; } = true;
+
+    public bool LogAuthenticationAttempts { get; set; } = true;
 }
 
 /// <summary>
@@ -34,11 +58,21 @@ public sealed class DebugConfig
 /// </summary>
 public sealed class LoggingConfig
 {
-    public required LogLevelConfig LogLevel { get; init; }
-    public required DebugConfig Debug { get; init; }
-    public string MinimumLevel { get; set; } = "Info";
+    public LogLevelConfig LogLevels { get; set; } = new();
+
+    public DebugConfig Debug { get; set; } = new();
+
+    public LogLevel MinimumLevel { get; set; } = LogLevel.Information;
+
     public bool IncludeTimestamps { get; set; } = true;
+
     public bool IncludeSourceInfo { get; set; } = true;
+
+    public bool IncludeEventId { get; set; } = true;
+
+    public bool LogToConsole { get; set; } = true;
+
+    public bool LogToFile { get; set; } = true;
 }
 
 /// <summary>
@@ -46,6 +80,7 @@ public sealed class LoggingConfig
 /// </summary>
 public sealed class AppConfig
 {
-    public required ServerConfig Server { get; init; }
-    public required LoggingConfig Logging { get; init; }
+    public ServerConfig Server { get; set; } = new();
+
+    public LoggingConfig Logging { get; set; } = new();
 }

@@ -12,15 +12,14 @@ internal class Program
         var config = ConfigurationManager.Instance.Current;
 
         // Initialize logging service
-        var logLevel = Enum.Parse<LogLevel>(config.Logging.MinimumLevel, true);
         var logService = new LogService(
-            logLevel,
+            config.Logging.MinimumLevel,
             config.Logging.IncludeTimestamps,
             config.Logging.IncludeSourceInfo
         );
 
         logService.Info("Starting Goldberg Master Server...", "Program");
-        logService.Debug($"Logging initialized with level: {logLevel}", "Program");
+        logService.Debug($"Logging initialized with level: {config.Logging.MinimumLevel}", "Program");
 
         using var server = new MasterServer(config.Server.Port, logService);
 

@@ -45,10 +45,9 @@ public class LobbyManager
                 return rooms;
             });
 
-        if (isNew)
-            _logService.Debug($"Created new lobby {lobby.RoomId} for app {lobby.Appid}", "LobbyManager");
-        else
-            _logService.Debug($"Updated lobby {lobby.RoomId}", "LobbyManager");
+        _logService.Debug(
+            isNew ? $"Created new lobby {lobby.RoomId} for app {lobby.Appid}" : $"Updated lobby {lobby.RoomId}",
+            "LobbyManager");
 
         return Task.FromResult(true);
     }
@@ -120,7 +119,7 @@ public class LobbyManager
         if (_userLobbies.TryGetValue(userId, out var lobbyIds))
         {
             var userLobbies = lobbyIds
-                .Select(id => _lobbies.TryGetValue(id, out var lobby) ? lobby : null)
+                .Select(id => _lobbies.GetValueOrDefault(id))
                 .Where(l => l is { Deleted: false })
                 .Cast<Lobby>()
                 .ToList();

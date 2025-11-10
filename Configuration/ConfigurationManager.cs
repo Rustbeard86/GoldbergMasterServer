@@ -16,7 +16,8 @@ public sealed class ConfigurationManager
         WriteIndented = true,
         PropertyNameCaseInsensitive = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        ReadCommentHandling = JsonCommentHandling.Skip // Enable JSONC support
+        ReadCommentHandling = JsonCommentHandling.Skip, // Enable JSONC support
+        Converters = { new JsonStringEnumConverter() } // Add enum converter
     };
 
     private readonly string _configPath;
@@ -69,20 +70,32 @@ public sealed class ConfigurationManager
     {
         var logLevel = new LogLevelConfig
         {
-            Default = "Information",
-            Microsoft = "Warning",
-            System = "Warning"
+            Default = new LogCategoryConfig { Level = LogLevel.Information },
+            Microsoft = new LogCategoryConfig { Level = LogLevel.Warning },
+            System = new LogCategoryConfig { Level = LogLevel.Warning },
+            Network = new LogCategoryConfig { Level = LogLevel.Debug },
+            PeerManagement = new LogCategoryConfig { Level = LogLevel.Debug },
+            Authentication = new LogCategoryConfig { Level = LogLevel.Debug }
         };
 
         var debug = new DebugConfig
         {
-            EnableDebug = false
+            EnableDebug = true,
+            LogNetworkPackets = true,
+            LogPeerEvents = true,
+            LogAuthenticationAttempts = true
         };
 
         var logging = new LoggingConfig
         {
-            LogLevel = logLevel,
-            Debug = debug
+            LogLevels = logLevel,
+            Debug = debug,
+            MinimumLevel = LogLevel.Debug,
+            IncludeTimestamps = true,
+            IncludeSourceInfo = true,
+            IncludeEventId = true,
+            LogToConsole = true,
+            LogToFile = true
         };
 
         var server = new ServerConfig

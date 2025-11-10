@@ -28,10 +28,10 @@ public class PeerManager
         var isNew = !appPeers.ContainsKey(peer.SteamId);
         appPeers.AddOrUpdate(peer.SteamId, peer, (_, _) => peer);
 
-        if (isNew)
-            _logService.Debug($"New peer {peer.SteamId} added for app {peer.AppId}", "PeerManager");
-        else
-            _logService.Debug($"Updated peer {peer.SteamId} for app {peer.AppId}", "PeerManager");
+        _logService.Debug(
+            isNew
+                ? $"New peer {peer.SteamId} added for app {peer.AppId}"
+                : $"Updated peer {peer.SteamId} for app {peer.AppId}", "PeerManager");
     }
 
     /// <summary>

@@ -195,7 +195,7 @@ public class MessageHandler(
                         // Broadcast join to all members
                         await networkService.BroadcastLobbyMessageAsync(lobbyMessages, message.SourceId, onlineMembers);
                     // Send current lobby state to the new member
-                    await networkService.BroadcastLobbyUpdateAsync(lobby, new[] { sender });
+                    await networkService.BroadcastLobbyUpdateAsync(lobby, [sender]);
                 }
 
                 break;
@@ -244,10 +244,9 @@ public class MessageHandler(
     /// </summary>
     private List<Peer> GetOnlineMembers(IEnumerable<Lobby.Types.Member> members)
     {
-        return members
+        return [.. members
             .Select(m => peerManager.GetPeer(m.Id))
             .Where(p => p != null)
-            .Cast<Peer>() // Convert from Peer? to Peer after filtering nulls
-            .ToList();
+            .Cast<Peer>()];
     }
 }

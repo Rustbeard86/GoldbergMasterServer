@@ -1,30 +1,25 @@
 using System.Runtime.CompilerServices;
+using GoldbergMasterServer.Configuration;
 
 namespace GoldbergMasterServer.Services;
-
-public enum LogLevel
-{
-    Debug = 0,
-    Info = 1,
-    Warning = 2,
-    Error = 3,
-    Critical = 4
-}
 
 /// <summary>
 ///     Provides centralized logging functionality with support for different verbosity levels
 /// </summary>
 public class LogService(
-    LogLevel minimumLevel = LogLevel.Info,
+    LogLevel minimumLevel = LogLevel.Information,
     bool includeTimestamps = true,
     bool includeSourceInfo = true)
 {
     private static readonly object Lock = new();
 
-    private void WriteLog(LogLevel level, string message, string? source = null,
-        [CallerMemberName] string caller = "",
-        [CallerFilePath] string file = "",
-        [CallerLineNumber] int lineNumber = 0)
+    private void WriteLog(
+        LogLevel level,
+        string message,
+        string? source,
+        string caller,
+        string file,
+        int lineNumber)
     {
         if (level < minimumLevel) return;
 
@@ -32,8 +27,8 @@ public class LogService(
         {
             var color = level switch
             {
-                LogLevel.Debug => ConsoleColor.Gray,
-                LogLevel.Info => ConsoleColor.White,
+                LogLevel.Trace or LogLevel.Debug => ConsoleColor.Gray,
+                LogLevel.Information => ConsoleColor.White,
                 LogLevel.Warning => ConsoleColor.Yellow,
                 LogLevel.Error => ConsoleColor.Red,
                 LogLevel.Critical => ConsoleColor.DarkRed,
@@ -54,6 +49,14 @@ public class LogService(
         }
     }
 
+    public void Trace(string message, string? source = null,
+        [CallerMemberName] string caller = "",
+        [CallerFilePath] string file = "",
+        [CallerLineNumber] int lineNumber = 0)
+    {
+        WriteLog(LogLevel.Trace, message, source, caller, file, lineNumber);
+    }
+
     public void Debug(string message, string? source = null,
         [CallerMemberName] string caller = "",
         [CallerFilePath] string file = "",
@@ -67,7 +70,7 @@ public class LogService(
         [CallerFilePath] string file = "",
         [CallerLineNumber] int lineNumber = 0)
     {
-        WriteLog(LogLevel.Info, message, source, caller, file, lineNumber);
+        WriteLog(LogLevel.Information, message, source, caller, file, lineNumber);
     }
 
     public void Warning(string message, string? source = null,
