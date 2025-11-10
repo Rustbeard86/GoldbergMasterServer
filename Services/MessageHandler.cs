@@ -12,6 +12,8 @@ public class MessageHandler(
     PeerManager peerManager,
     NetworkService networkService,
     LobbyManager lobbyManager,
+    GameserverManager gameserverManager,
+    P2PRelayManager p2pRelayManager,
     LogService logService)
 {
     public async Task HandleMessageAsync(byte[] buffer, IPEndPoint remoteEndPoint)
@@ -61,7 +63,7 @@ public class MessageHandler(
                     break;
 
                 case Common_Message.MessagesOneofCase.Network:
-                    HandleNetworkPb(message, message.Network, remoteEndPoint);
+                    await HandleNetworkPb(message, message.Network, remoteEndPoint);
                     break;
 
                 case Common_Message.MessagesOneofCase.NetworkOld:
@@ -69,11 +71,11 @@ public class MessageHandler(
                     break;
 
                 case Common_Message.MessagesOneofCase.NetworkingSockets:
-                    HandleNetworkingSockets(message, message.NetworkingSockets, remoteEndPoint);
+                    await HandleNetworkingSockets(message, message.NetworkingSockets, remoteEndPoint);
                     break;
 
                 case Common_Message.MessagesOneofCase.NetworkingMessages:
-                    HandleNetworkingMessages(message, message.NetworkingMessages, remoteEndPoint);
+                    await HandleNetworkingMessages(message, message.NetworkingMessages, remoteEndPoint);
                     break;
 
                 case Common_Message.MessagesOneofCase.SteamMessages:
@@ -181,11 +183,15 @@ public class MessageHandler(
             $"Gameserver update: ID={gameserver.Id}, Name={gameserver.ServerName.ToStringUtf8()}, Map={gameserver.MapName.ToStringUtf8()}, Players={gameserver.NumPlayers}/{gameserver.MaxPlayerCount}, AppID={gameserver.Appid}",
             "MessageHandler");
 
-        // TODO: Implement gameserver registry
-        // For now, just acknowledge receipt
-        logService.Debug(
-            $"Gameserver details: IP={gameserver.Ip}, Port={gameserver.Port}, QueryPort={gameserver.QueryPort}, Offline={gameserver.Offline}",
-            "MessageHandler");
+        // Register or update the gameserver
+        var success = gameserverManager.RegisterOrUpdateServer(gameserver);
+
+        if (success)
+            logService.Debug(
+                $"Gameserver registered successfully: IP={gameserver.Ip}, Port={gameserver.Port}, QueryPort={gameserver.QueryPort}, Offline={gameserver.Offline}",
+                "MessageHandler");
+        else
+            logService.Warning($"Failed to register gameserver {gameserver.Id}", "MessageHandler");
 
         await Task.CompletedTask;
     }
@@ -250,20 +256,72 @@ public class MessageHandler(
     /// <summary>
     ///     Handles Network_pb messages (ISteamNetworking)
     /// </summary>
-    private void HandleNetworkPb(Common_Message message, Network_pb network, IPEndPoint remoteEndPoint)
+    private async Task HandleNetworkPb(Common_Message message, Network_pb network, IPEndPoint remoteEndPoint)
     {
         logService.Debug(
-            $"Network_pb message: Channel={network.Channel}, Type={network.Type}, DataSize={network.Data.Length}, From={message.SourceId}",
+            $"Network_pb message: Channel={network.Channel}, Type={network.Type}, DataSize={network.Data.Length}, From={message.SourceId}, To={message.DestId}",
             "MessageHandler");
 
-        // TODO: Implement P2P relay functionality
-        // This would involve forwarding data between peers
+        var sourcePeer = peerManager.GetPeer(message.SourceId);
+        if (sourcePeer == null)
+        {
+            logService.Warning($"Unknown source peer {message.SourceId} for Network_pb relay", "MessageHandler");
+            return;
+        }
+
+        switch (network.Type)
+        {
+            case Network_pb.Types.MessageType.Data:
+                // Relay data packet
+                var destPeer = peerManager.GetPeer(message.DestId);
+                if (destPeer == null)
+                {
+                    logService.Warning($"Unknown destination peer {message.DestId} for Network_pb relay",
+                        "MessageHandler");
+
+                    // Send FAILED_CONNECT back to source
+                    var failedMsg = new Network_pb
+                    {
+                        Channel = network.Channel,
+                        Type = Network_pb.Types.MessageType.FailedConnect
+                    };
+                    await networkService.SendNetworkMessageAsync(failedMsg, sourcePeer, message.SourceId);
+                    return;
+                }
+
+                // Create or get connection
+                var connectionId = p2pRelayManager.CreateOrGetConnection(
+                    message.SourceId,
+                    message.DestId,
+                    sourcePeer.AppId,
+                    ConnectionType.NetworkPb);
+
+                // Update connection to connected state
+                p2pRelayManager.UpdateConnectionState(connectionId, ConnectionState.Connected);
+
+                // Relay the packet
+                await networkService.SendNetworkMessageAsync(network, destPeer, message.SourceId);
+
+                // Record statistics
+                p2pRelayManager.RecordPacketRelayed(connectionId, network.Data.Length);
+
+                logService.Debug(
+                    $"Relayed Network_pb packet: {message.SourceId} -> {message.DestId}, Size={network.Data.Length}, Channel={network.Channel}",
+                    "MessageHandler");
+                break;
+
+            case Network_pb.Types.MessageType.FailedConnect:
+                // Connection failed notification
+                logService.Info($"Network_pb connection failed: {message.SourceId} -> {message.DestId}",
+                    "MessageHandler");
+                break;
+        }
     }
 
     /// <summary>
     ///     Handles Network_Old messages (legacy ISteamNetworking)
     /// </summary>
-    private void HandleNetworkOld(Common_Message message, Network_Old networkOld, IPEndPoint remoteEndPoint)
+    private void HandleNetworkOld(Common_Message message, Network_Old networkOld, IPEndPoint _)
     {
         logService.Debug(
             $"Network_Old message: Type={networkOld.Type}, ConnectionID={networkOld.ConnectionId}, From={message.SourceId}",
@@ -275,28 +333,216 @@ public class MessageHandler(
     /// <summary>
     ///     Handles Networking_Sockets messages (ISteamNetworkingSockets)
     /// </summary>
-    private void HandleNetworkingSockets(Common_Message message, Networking_Sockets networkingSockets,
+    private async Task HandleNetworkingSockets(Common_Message message, Networking_Sockets networkingSockets,
         IPEndPoint remoteEndPoint)
     {
         logService.Debug(
-            $"NetworkingSockets message: Type={networkingSockets.Type}, VirtualPort={networkingSockets.VirtualPort}, ConnectionID={networkingSockets.ConnectionId}, MessageNum={networkingSockets.MessageNumber}",
+            $"NetworkingSockets message: Type={networkingSockets.Type}, VirtualPort={networkingSockets.VirtualPort}, ConnectionID={networkingSockets.ConnectionId}, MessageNum={networkingSockets.MessageNumber}, From={message.SourceId}, To={message.DestId}",
             "MessageHandler");
 
-        // TODO: Implement ISteamNetworkingSockets relay
-        // This is the modern Steam networking API
+        var sourcePeer = peerManager.GetPeer(message.SourceId);
+        if (sourcePeer == null)
+        {
+            logService.Warning($"Unknown source peer {message.SourceId} for NetworkingSockets relay", "MessageHandler");
+            return;
+        }
+
+        switch (networkingSockets.Type)
+        {
+            case Networking_Sockets.Types.MessageType.ConnectionRequest:
+                // Peer is requesting a connection
+                var destPeer = peerManager.GetPeer(message.DestId);
+                if (destPeer == null)
+                {
+                    logService.Warning(
+                        $"Unknown destination peer {message.DestId} for NetworkingSockets connection request",
+                        "MessageHandler");
+
+                    // Send CONNECTION_END to indicate failure
+                    var endMsg = new Networking_Sockets
+                    {
+                        Type = Networking_Sockets.Types.MessageType.ConnectionEnd,
+                        VirtualPort = networkingSockets.VirtualPort,
+                        ConnectionId = networkingSockets.ConnectionId
+                    };
+                    await networkService.SendNetworkingSocketsMessageAsync(endMsg, sourcePeer, message.SourceId);
+                    return;
+                }
+
+                // Create connection
+                var connectionId = p2pRelayManager.CreateOrGetConnection(
+                    message.SourceId,
+                    message.DestId,
+                    sourcePeer.AppId,
+                    ConnectionType.NetworkingSockets);
+
+                // Forward the connection request
+                await networkService.SendNetworkingSocketsMessageAsync(networkingSockets, destPeer, message.SourceId);
+
+                logService.Info(
+                    $"Forwarded NetworkingSockets connection request: {message.SourceId} -> {message.DestId}, Port={networkingSockets.VirtualPort}",
+                    "MessageHandler");
+                break;
+
+            case Networking_Sockets.Types.MessageType.ConnectionAccepted:
+                // Connection accepted by destination
+                destPeer = peerManager.GetPeer(message.DestId);
+                if (destPeer == null)
+                {
+                    logService.Warning($"Unknown destination peer {message.DestId} for NetworkingSockets accept",
+                        "MessageHandler");
+                    return;
+                }
+
+                // Update connection state
+                connectionId = p2pRelayManager.FindConnection(message.SourceId, message.DestId,
+                    ConnectionType.NetworkingSockets);
+                if (connectionId != 0) p2pRelayManager.UpdateConnectionState(connectionId, ConnectionState.Connected);
+
+                // Forward the acceptance
+                await networkService.SendNetworkingSocketsMessageAsync(networkingSockets, destPeer, message.SourceId);
+
+                logService.Info(
+                    $"Forwarded NetworkingSockets connection accepted: {message.SourceId} -> {message.DestId}",
+                    "MessageHandler");
+                break;
+
+            case Networking_Sockets.Types.MessageType.Data:
+                // Relay data packet
+                destPeer = peerManager.GetPeer(message.DestId);
+                if (destPeer == null)
+                {
+                    logService.Warning($"Unknown destination peer {message.DestId} for NetworkingSockets data",
+                        "MessageHandler");
+                    return;
+                }
+
+                // Find connection
+                connectionId = p2pRelayManager.FindConnection(message.SourceId, message.DestId,
+                    ConnectionType.NetworkingSockets);
+                if (connectionId == 0)
+                {
+                    logService.Warning(
+                        $"No connection found for NetworkingSockets data: {message.SourceId} -> {message.DestId}",
+                        "MessageHandler");
+                    return;
+                }
+
+                // Relay the data
+                await networkService.SendNetworkingSocketsMessageAsync(networkingSockets, destPeer, message.SourceId);
+
+                // Record statistics
+                p2pRelayManager.RecordPacketRelayed(connectionId, networkingSockets.Data.Length);
+
+                logService.Debug(
+                    $"Relayed NetworkingSockets data: {message.SourceId} -> {message.DestId}, Size={networkingSockets.Data.Length}, MsgNum={networkingSockets.MessageNumber}",
+                    "MessageHandler");
+                break;
+
+            case Networking_Sockets.Types.MessageType.ConnectionEnd:
+                // Connection is being closed
+                destPeer = peerManager.GetPeer(message.DestId);
+                if (destPeer != null)
+                    await networkService.SendNetworkingSocketsMessageAsync(networkingSockets, destPeer,
+                        message.SourceId);
+
+                // Close connection
+                connectionId = p2pRelayManager.FindConnection(message.SourceId, message.DestId,
+                    ConnectionType.NetworkingSockets);
+                if (connectionId != 0) p2pRelayManager.CloseConnection(connectionId, "Peer requested");
+
+                logService.Info($"NetworkingSockets connection ended: {message.SourceId} <-> {message.DestId}",
+                    "MessageHandler");
+                break;
+        }
     }
 
     /// <summary>
     ///     Handles Networking_Messages (another networking variant)
     /// </summary>
-    private void HandleNetworkingMessages(Common_Message message, Networking_Messages networkingMessages,
+    private async Task HandleNetworkingMessages(Common_Message message, Networking_Messages networkingMessages,
         IPEndPoint remoteEndPoint)
     {
         logService.Debug(
-            $"NetworkingMessages message: Type={networkingMessages.Type}, Channel={networkingMessages.Channel}, From={networkingMessages.IdFrom}",
+            $"NetworkingMessages message: Type={networkingMessages.Type}, Channel={networkingMessages.Channel}, From={networkingMessages.IdFrom}, To={message.DestId}",
             "MessageHandler");
 
-        // TODO: Implement networking messages relay
+        var sourcePeer = peerManager.GetPeer(message.SourceId);
+        if (sourcePeer == null)
+        {
+            logService.Warning($"Unknown source peer {message.SourceId} for NetworkingMessages relay",
+                "MessageHandler");
+            return;
+        }
+
+        var destPeer = peerManager.GetPeer(message.DestId);
+        if (destPeer == null)
+        {
+            logService.Warning($"Unknown destination peer {message.DestId} for NetworkingMessages relay",
+                "MessageHandler");
+            return;
+        }
+
+        switch (networkingMessages.Type)
+        {
+            case Networking_Messages.Types.MessageType.ConnectionNew:
+                // New connection request
+                var connectionId = p2pRelayManager.CreateOrGetConnection(
+                    message.SourceId,
+                    message.DestId,
+                    sourcePeer.AppId,
+                    ConnectionType.NetworkingMessages);
+
+                await networkService.SendNetworkingMessagesAsync(networkingMessages, destPeer, message.SourceId);
+                logService.Info(
+                    $"Forwarded NetworkingMessages connection request: {message.SourceId} -> {message.DestId}",
+                    "MessageHandler");
+                break;
+
+            case Networking_Messages.Types.MessageType.ConnectionAccept:
+                // Connection accepted
+                connectionId = p2pRelayManager.FindConnection(message.SourceId, message.DestId,
+                    ConnectionType.NetworkingMessages);
+                if (connectionId != 0) p2pRelayManager.UpdateConnectionState(connectionId, ConnectionState.Connected);
+
+                await networkService.SendNetworkingMessagesAsync(networkingMessages, destPeer, message.SourceId);
+                logService.Info(
+                    $"Forwarded NetworkingMessages connection accepted: {message.SourceId} -> {message.DestId}",
+                    "MessageHandler");
+                break;
+
+            case Networking_Messages.Types.MessageType.Data:
+                // Relay data
+                connectionId = p2pRelayManager.FindConnection(message.SourceId, message.DestId,
+                    ConnectionType.NetworkingMessages);
+                if (connectionId == 0)
+                {
+                    logService.Warning(
+                        $"No connection found for NetworkingMessages data: {message.SourceId} -> {message.DestId}",
+                        "MessageHandler");
+                    return;
+                }
+
+                await networkService.SendNetworkingMessagesAsync(networkingMessages, destPeer, message.SourceId);
+                p2pRelayManager.RecordPacketRelayed(connectionId, networkingMessages.Data.Length);
+
+                logService.Debug(
+                    $"Relayed NetworkingMessages data: {message.SourceId} -> {message.DestId}, Size={networkingMessages.Data.Length}",
+                    "MessageHandler");
+                break;
+
+            case Networking_Messages.Types.MessageType.ConnectionEnd:
+                // Connection ended
+                await networkService.SendNetworkingMessagesAsync(networkingMessages, destPeer, message.SourceId);
+
+                connectionId = p2pRelayManager.FindConnection(message.SourceId, message.DestId,
+                    ConnectionType.NetworkingMessages);
+                if (connectionId != 0) p2pRelayManager.CloseConnection(connectionId, "Peer requested");
+
+                logService.Info($"NetworkingMessages connection ended: {message.SourceId} <-> {message.DestId}",
+                    "MessageHandler");
+                break;
+        }
     }
 
     /// <summary>
@@ -325,7 +571,7 @@ public class MessageHandler(
     ///     Handles GameServerStats_Messages (server-side stats sync)
     /// </summary>
     private void HandleGameServerStatsMessages(Common_Message message, GameServerStats_Messages statsMessages,
-        IPEndPoint remoteEndPoint)
+        IPEndPoint _)
     {
         logService.Debug($"GameServerStats message: Type={statsMessages.Type}, From={message.SourceId}",
             "MessageHandler");
@@ -358,7 +604,7 @@ public class MessageHandler(
     ///     Handles Leaderboards_Messages (leaderboard sync)
     /// </summary>
     private void HandleLeaderboardsMessages(Common_Message message, Leaderboards_Messages leaderboardsMessages,
-        IPEndPoint remoteEndPoint)
+        IPEndPoint _)
     {
         logService.Debug(
             $"Leaderboards message: Type={leaderboardsMessages.Type}, AppID={leaderboardsMessages.Appid}, Board={leaderboardsMessages.LeaderboardInfo?.BoardName}",
@@ -388,7 +634,7 @@ public class MessageHandler(
     ///     Handles Steam_User_Stats_Messages (user stats sync between peers)
     /// </summary>
     private void HandleSteamUserStatsMessages(Common_Message message, Steam_User_Stats_Messages statsMessages,
-        IPEndPoint remoteEndPoint)
+        IPEndPoint _)
     {
         logService.Debug($"Steam_User_Stats message: Type={statsMessages.Type}, From={message.SourceId}",
             "MessageHandler");
@@ -468,14 +714,14 @@ public class MessageHandler(
         // Send each matching lobby as a separate message
         foreach (var lobby in matchingLobbies)
         {
-            var responseMessage = new Common_Message
+            // Create response message but we send using SendLobbyMessageAsync instead
+            _ = new Common_Message
             {
                 SourceId = message.DestId, // Server's ID
                 DestId = message.SourceId, // Querying peer's ID
                 Lobby = lobby
             };
 
-            var buffer = responseMessage.ToByteArray();
             try
             {
                 await networkService.SendLobbyMessageAsync(new Lobby_Messages { Id = lobby.RoomId }, sender);

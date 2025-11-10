@@ -7,7 +7,7 @@ internal class Program
 {
     private static bool _isShuttingDown;
     
-    private static async Task Main(string[] args)
+    private static async Task Main(string[] _)
     {
         // Initialize configuration
         ConfigurationManager.Initialize();

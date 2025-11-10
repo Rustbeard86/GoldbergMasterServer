@@ -66,8 +66,7 @@ public class PeerManager
 
         var now = DateTime.UtcNow;
         return appPeers.Values
-            .Where(p => p.SteamId != excludeSteamId && now - p.LastSeen <= _peerTimeout)
-            .ToList();
+            .Where(p => p.SteamId != excludeSteamId && now - p.LastSeen <= _peerTimeout);
     }
 
     public void CleanupStaleMembers()

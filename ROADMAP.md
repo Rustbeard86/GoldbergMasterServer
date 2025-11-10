@@ -21,22 +21,22 @@
 - [x] Basic logging for all message types
 - [x] Protocol documentation
 
-## Phase 2: Game Server Discovery (NEXT PRIORITY)
+## Phase 2: Game Server Discovery (? COMPLETE)
 
 ### Milestone 2.1: Gameserver Manager
 **Priority**: HIGH  
-**Estimated Time**: 1-2 days
+**Status**: ? COMPLETE
 
-**Tasks**:
-- [ ] Create `GameserverManager` service
-- [ ] Add gameserver storage (in-memory dictionary)
-- [ ] Implement gameserver registration
-- [ ] Handle gameserver updates (players, map, etc.)
-- [ ] Add gameserver query/filtering
-- [ ] Implement automatic offline detection
-- [ ] Add to MessageHandler Gameserver updates
+**Completed**:
+- [x] Create `GameserverManager` service
+- [x] Add gameserver storage (in-memory dictionary)
+- [x] Implement gameserver registration
+- [x] Handle gameserver updates (players, map, etc.)
+- [x] Add gameserver query/filtering
+- [x] Implement automatic offline detection
+- [x] Add to MessageHandler Gameserver updates
 
-**Acceptance Criteria**:
+**Results**:
 - Dedicated servers can register with master server
 - Clients can query available servers
 - Server list updates automatically
@@ -44,7 +44,7 @@
 
 ### Milestone 2.2: Server Browser Support
 **Priority**: MEDIUM  
-**Estimated Time**: 2-3 days
+**Status**: ? PENDING
 
 **Tasks**:
 - [ ] Integrate with existing Announce system
@@ -52,12 +52,6 @@
 - [ ] Add filter support (region, map, players, etc.)
 - [ ] Handle Source query protocol passthrough
 - [ ] Create `NetworkService` methods for server lists
-
-**Acceptance Criteria**:
-- Clients can browse available servers
-- Filters work correctly
-- Server details are accurate
-- Quick refresh/update capability
 
 ## Phase 3: Friend & Presence System
 
@@ -108,20 +102,20 @@
 - Messages queue when user offline
 - Chat history (if implemented) persists
 
-## Phase 4: P2P Relay System
+## Phase 4: P2P Relay System (? COMPLETE)
 
 ### Milestone 4.1: Connection Management
 **Priority**: HIGH  
-**Estimated Time**: 3-4 days
+**Status**: ? COMPLETE
 
-**Tasks**:
-- [ ] Create `P2PRelayManager` service
-- [ ] Implement connection state tracking
-- [ ] Handle connection requests/accepts
-- [ ] Create connection ID mapping
-- [ ] Add connection timeout handling
+**Completed**:
+- [x] Create `P2PRelayManager` service
+- [x] Implement connection state tracking
+- [x] Handle connection requests/accepts
+- [x] Create connection ID mapping
+- [x] Add connection timeout handling
 
-**Acceptance Criteria**:
+**Results**:
 - Peers can request P2P connections
 - Connection state tracked accurately
 - Connections timeout properly
@@ -129,38 +123,37 @@
 
 ### Milestone 4.2: Data Relay
 **Priority**: HIGH  
-**Estimated Time**: 2-3 days
+**Status**: ? COMPLETE
 
-**Tasks**:
-- [ ] Implement packet routing by connection ID
-- [ ] Support multiple channels
-- [ ] Add Network_pb relay
-- [ ] Add Networking_Sockets relay
-- [ ] Add Networking_Messages relay
-- [ ] Handle Network_Old (if needed)
+**Completed**:
+- [x] Implement packet routing by connection ID
+- [x] Support multiple channels
+- [x] Add Network_pb relay (ISteamNetworking)
+- [x] Add Networking_Sockets relay (ISteamNetworkingSockets)
+- [x] Add Networking_Messages relay
+- [x] Handle Network_Old (stub only - lower priority)
 
-**Acceptance Criteria**:
+**Results**:
 - Data packets route correctly
 - Multiple channels work independently
-- All networking APIs supported
+- 3 major networking APIs supported
 - Performance is acceptable
 
 ### Milestone 4.3: Advanced Relay Features
 **Priority**: MEDIUM  
-**Estimated Time**: 2-3 days
+**Status**: ?? IN PROGRESS
 
 **Tasks**:
+- [x] Implement bandwidth statistics
+- [x] Add connection quality metrics (basic)
 - [ ] Implement bandwidth throttling
-- [ ] Add connection quality metrics
-- [ ] Implement bandwidth statistics
 - [ ] Add admin monitoring tools
 - [ ] Create connection debugging tools
 
-**Acceptance Criteria**:
-- Bandwidth limits enforced per peer
-- Connection quality measurable
-- Admin can monitor relay usage
-- Debugging tools available
+**Partial Results**:
+- Statistics tracked per connection
+- Global statistics available
+- Basic monitoring through logs
 
 ## Phase 5: Stats & Achievements
 

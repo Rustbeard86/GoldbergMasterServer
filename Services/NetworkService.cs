@@ -223,4 +223,120 @@ public sealed class NetworkService : IDisposable
             _logService.Error($"Failed to send direct lobby message: To={recipient.SteamId}, Error={ex.Message}", "Network.Error");
         }
     }
+
+    /// <summary>
+    ///     Sends a gameserver list response to a peer
+    /// </summary>
+    public async Task SendGameserverListAsync(IEnumerable<Gameserver> servers, Peer recipient)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, nameof(NetworkService));
+
+        var serverList = servers.ToList();
+        _logService.Debug($"Sending gameserver list: Count={serverList.Count}, To={recipient.SteamId}", "Network.Gameserver");
+
+        foreach (var server in serverList)
+        {
+            var message = new Common_Message
+            {
+                SourceId = MasterServerSteamId,
+                DestId = recipient.SteamId,
+                Gameserver = server
+            };
+
+            var buffer = message.ToByteArray();
+            try
+            {
+                await _udpListener.SendAsync(buffer, buffer.Length, recipient.EndPoint);
+                _logService.Debug($"Gameserver sent: ID={server.Id}, Name={server.ServerName.ToStringUtf8()}, To={recipient.EndPoint}", "Network.Gameserver");
+            }
+            catch (Exception ex)
+            {
+                _logService.Error($"Failed to send gameserver: ID={server.Id}, Error={ex.Message}", "Network.Error");
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Sends a Network_pb message (ISteamNetworking)
+    /// </summary>
+    public async Task SendNetworkMessageAsync(Network_pb networkMessage, Peer recipient, ulong senderId = MasterServerSteamId)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, nameof(NetworkService));
+
+        var message = new Common_Message
+        {
+            SourceId = senderId,
+            DestId = recipient.SteamId,
+            Network = networkMessage
+        };
+
+        var buffer = message.ToByteArray();
+        _logService.Debug($"Sending Network_pb: Type={networkMessage.Type}, Channel={networkMessage.Channel}, To={recipient.SteamId}, Size={buffer.Length}bytes", "Network.P2P");
+
+        try
+        {
+            await _udpListener.SendAsync(buffer, buffer.Length, recipient.EndPoint);
+        }
+        catch (Exception ex)
+        {
+            _logService.Error($"Failed to send Network_pb: To={recipient.SteamId}, Error={ex.Message}", "Network.Error");
+            throw;
+        }
+    }
+
+    /// <summary>
+    ///     Sends a Networking_Sockets message (ISteamNetworkingSockets)
+    /// </summary>
+    public async Task SendNetworkingSocketsMessageAsync(Networking_Sockets networkingMessage, Peer recipient, ulong senderId = MasterServerSteamId)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, nameof(NetworkService));
+
+        var message = new Common_Message
+        {
+            SourceId = senderId,
+            DestId = recipient.SteamId,
+            NetworkingSockets = networkingMessage
+        };
+
+        var buffer = message.ToByteArray();
+        _logService.Debug($"Sending NetworkingSockets: Type={networkingMessage.Type}, Port={networkingMessage.VirtualPort}, To={recipient.SteamId}, Size={buffer.Length}bytes", "Network.P2P");
+
+        try
+        {
+            await _udpListener.SendAsync(buffer, buffer.Length, recipient.EndPoint);
+        }
+        catch (Exception ex)
+        {
+            _logService.Error($"Failed to send NetworkingSockets: To={recipient.SteamId}, Error={ex.Message}", "Network.Error");
+            throw;
+        }
+    }
+
+    /// <summary>
+    ///     Sends a Networking_Messages message
+    /// </summary>
+    public async Task SendNetworkingMessagesAsync(Networking_Messages networkingMessage, Peer recipient, ulong senderId = MasterServerSteamId)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, nameof(NetworkService));
+
+        var message = new Common_Message
+        {
+            SourceId = senderId,
+            DestId = recipient.SteamId,
+            NetworkingMessages = networkingMessage
+        };
+
+        var buffer = message.ToByteArray();
+        _logService.Debug($"Sending NetworkingMessages: Type={networkingMessage.Type}, Channel={networkingMessage.Channel}, To={recipient.SteamId}, Size={buffer.Length}bytes", "Network.P2P");
+
+        try
+        {
+            await _udpListener.SendAsync(buffer, buffer.Length, recipient.EndPoint);
+        }
+        catch (Exception ex)
+        {
+            _logService.Error($"Failed to send NetworkingMessages: To={recipient.SteamId}, Error={ex.Message}", "Network.Error");
+            throw;
+        }
+    }
 }

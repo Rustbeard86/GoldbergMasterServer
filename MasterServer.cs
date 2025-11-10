@@ -10,6 +10,8 @@ public sealed class MasterServer : IDisposable
 {
     private readonly Timer _cleanupTimer;
     private readonly LobbyManager _lobbyManager;
+    private readonly GameserverManager _gameserverManager;
+    private readonly P2PRelayManager _p2pRelayManager;
     private readonly LogService _logService;
     private readonly MessageHandler _messageHandler;
     private readonly NetworkService _networkService;
@@ -23,13 +25,19 @@ public sealed class MasterServer : IDisposable
         _networkService = new NetworkService(port, logService);
         _peerManager = new PeerManager(TimeSpan.FromSeconds(30), logService);
         _lobbyManager = new LobbyManager(TimeSpan.FromMinutes(5), logService);
-        _messageHandler = new MessageHandler(_peerManager, _networkService, _lobbyManager, logService);
+        _gameserverManager = new GameserverManager(TimeSpan.FromMinutes(10), logService);
+        _p2pRelayManager = new P2PRelayManager(TimeSpan.FromMinutes(5), _peerManager, logService);
+        _messageHandler = new MessageHandler(_peerManager, _networkService, _lobbyManager, _gameserverManager, _p2pRelayManager, logService);
 
         _logService.Info($"Server initialized on UDP port {port}", "MasterServer");
 
-        // Start a timer to clean up disconnected peers every 10 seconds
-        _cleanupTimer = new Timer(_ => _peerManager.CleanupStaleMembers(), null,
-            TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
+        // Start a timer to clean up disconnected peers, stale servers, and idle connections every 10 seconds
+        _cleanupTimer = new Timer(_ =>
+        {
+            _peerManager.CleanupStaleMembers();
+            _gameserverManager.CleanupStaleServers();
+            _p2pRelayManager.CleanupStaleConnections();
+        }, null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
     }
 
     public void Dispose()
@@ -55,6 +63,8 @@ public sealed class MasterServer : IDisposable
             _networkService.Dispose(); // Safe to call multiple times due to NetworkService's _disposed check
             _peerManager.Shutdown();
             _lobbyManager.Shutdown();
+            _gameserverManager.Shutdown();
+            _p2pRelayManager.Shutdown();
         }
 
         _disposed = true;
