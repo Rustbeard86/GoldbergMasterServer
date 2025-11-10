@@ -177,7 +177,7 @@ public class MessageHandler(
     /// <summary>
     ///     Handles Gameserver registration and updates
     /// </summary>
-    private async Task HandleGameserverAsync(Common_Message message, Gameserver gameserver, IPEndPoint _)
+    private async Task HandleGameserverAsync(Common_Message _, Gameserver gameserver, IPEndPoint _1)
     {
         logService.Info(
             $"Gameserver update: ID={gameserver.Id}, Name={gameserver.ServerName.ToStringUtf8()}, Map={gameserver.MapName.ToStringUtf8()}, Players={gameserver.NumPlayers}/{gameserver.MaxPlayerCount}, AppID={gameserver.Appid}",
@@ -199,7 +199,7 @@ public class MessageHandler(
     /// <summary>
     ///     Handles Friend status and rich presence updates
     /// </summary>
-    private async Task HandleFriendAsync(Common_Message message, Friend friend, IPEndPoint _)
+    private async Task HandleFriendAsync(Common_Message _, Friend friend, IPEndPoint _1)
     {
         logService.Debug(
             $"Friend update: ID={friend.Id}, Name={friend.Name.ToStringUtf8()}, AppID={friend.Appid}, LobbyID={friend.LobbyId}",

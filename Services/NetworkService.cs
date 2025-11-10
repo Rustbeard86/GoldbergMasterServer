@@ -68,21 +68,22 @@ public sealed class NetworkService : IDisposable
                 "Network.Receive");
 
             if (result.Buffer.Length >= 8)
-            {
-                _logService.Debug($"Packet header: {BitConverter.ToString([.. result.Buffer.Take(8)])}", "Network.PacketDetails");
-            }
+                _logService.Debug($"Packet header: {BitConverter.ToString([.. result.Buffer.Take(8)])}",
+                    "Network.PacketDetails");
 
             return (result.Buffer, result.RemoteEndPoint);
         }
         catch (SocketException ex) when (_disposed && (ex.ErrorCode == 995 || ex.ErrorCode == 10004))
         {
             // Socket was closed during shutdown - this is expected, rethrow to be handled by caller
-            _logService.Debug($"Socket receive cancelled during shutdown (ErrorCode={ex.ErrorCode})", "Network.Shutdown");
+            _logService.Debug($"Socket receive cancelled during shutdown (ErrorCode={ex.ErrorCode})",
+                "Network.Shutdown");
             throw;
         }
         catch (SocketException ex)
         {
-            _logService.Error($"Socket error while receiving data: {ex.Message} (ErrorCode={ex.ErrorCode})", "Network.Error");
+            _logService.Error($"Socket error while receiving data: {ex.Message} (ErrorCode={ex.ErrorCode})",
+                "Network.Error");
             throw;
         }
     }
@@ -100,7 +101,6 @@ public sealed class NetworkService : IDisposable
 
         var peerList = peers.ToList();
         foreach (var peer in peerList)
-        {
             pongAnnounce.Peers.Add(new Announce.Types.Other_Peers
             {
                 Id = peer.SteamId,
@@ -108,7 +108,6 @@ public sealed class NetworkService : IDisposable
                 UdpPort = (uint)peer.EndPoint.Port,
                 Appid = peer.AppId
             });
-        }
 
         var pongMessage = new Common_Message
         {
@@ -148,7 +147,8 @@ public sealed class NetworkService : IDisposable
         };
 
         var buffer = message.ToByteArray();
-        _logService.Debug($"Broadcasting lobby update: LobbyId={lobby.RoomId}, Size={buffer.Length}bytes", "Network.Lobby");
+        _logService.Debug($"Broadcasting lobby update: LobbyId={lobby.RoomId}, Size={buffer.Length}bytes",
+            "Network.Lobby");
 
         foreach (var recipient in recipients)
         {
@@ -156,11 +156,14 @@ public sealed class NetworkService : IDisposable
             try
             {
                 await _udpListener.SendAsync(buffer, buffer.Length, recipient.EndPoint);
-                _logService.Debug($"Lobby update sent: LobbyId={lobby.RoomId}, To={recipient.SteamId}, EndPoint={recipient.EndPoint}", "Network.Lobby");
+                _logService.Debug(
+                    $"Lobby update sent: LobbyId={lobby.RoomId}, To={recipient.SteamId}, EndPoint={recipient.EndPoint}",
+                    "Network.Lobby");
             }
             catch (Exception ex)
             {
-                _logService.Error($"Failed to send lobby update: To={recipient.SteamId}, Error={ex.Message}", "Network.Error");
+                _logService.Error($"Failed to send lobby update: To={recipient.SteamId}, Error={ex.Message}",
+                    "Network.Error");
             }
         }
     }
@@ -168,7 +171,8 @@ public sealed class NetworkService : IDisposable
     /// <summary>
     ///     Broadcasts a lobby message to all members except the sender
     /// </summary>
-    public async Task BroadcastLobbyMessageAsync(Lobby_Messages lobbyMessage, ulong senderId, IEnumerable<Peer> recipients)
+    public async Task BroadcastLobbyMessageAsync(Lobby_Messages lobbyMessage, ulong senderId,
+        IEnumerable<Peer> recipients)
     {
         ObjectDisposedException.ThrowIf(_disposed, nameof(NetworkService));
 
@@ -179,7 +183,9 @@ public sealed class NetworkService : IDisposable
         };
 
         var buffer = message.ToByteArray();
-        _logService.Debug($"Broadcasting lobby message: Type={lobbyMessage.Type}, LobbyId={lobbyMessage.Id}, Size={buffer.Length}bytes", "Network.Lobby");
+        _logService.Debug(
+            $"Broadcasting lobby message: Type={lobbyMessage.Type}, LobbyId={lobbyMessage.Id}, Size={buffer.Length}bytes",
+            "Network.Lobby");
 
         foreach (var recipient in recipients.Where(r => r.SteamId != senderId))
         {
@@ -187,11 +193,14 @@ public sealed class NetworkService : IDisposable
             try
             {
                 await _udpListener.SendAsync(buffer, buffer.Length, recipient.EndPoint);
-                _logService.Debug($"Lobby message sent: Type={lobbyMessage.Type}, To={recipient.SteamId}, EndPoint={recipient.EndPoint}", "Network.Lobby");
+                _logService.Debug(
+                    $"Lobby message sent: Type={lobbyMessage.Type}, To={recipient.SteamId}, EndPoint={recipient.EndPoint}",
+                    "Network.Lobby");
             }
             catch (Exception ex)
             {
-                _logService.Error($"Failed to broadcast lobby message: To={recipient.SteamId}, Error={ex.Message}", "Network.Error");
+                _logService.Error($"Failed to broadcast lobby message: To={recipient.SteamId}, Error={ex.Message}",
+                    "Network.Error");
             }
         }
     }
@@ -199,7 +208,8 @@ public sealed class NetworkService : IDisposable
     /// <summary>
     ///     Sends a direct lobby message to a specific peer
     /// </summary>
-    public async Task SendLobbyMessageAsync(Lobby_Messages lobbyMessage, Peer recipient, ulong senderId = MasterServerSteamId)
+    public async Task SendLobbyMessageAsync(Lobby_Messages lobbyMessage, Peer recipient,
+        ulong senderId = MasterServerSteamId)
     {
         ObjectDisposedException.ThrowIf(_disposed, nameof(NetworkService));
 
@@ -211,16 +221,21 @@ public sealed class NetworkService : IDisposable
         };
 
         var buffer = message.ToByteArray();
-        _logService.Debug($"Sending direct lobby message: Type={lobbyMessage.Type}, To={recipient.SteamId}, Size={buffer.Length}bytes", "Network.Lobby");
+        _logService.Debug(
+            $"Sending direct lobby message: Type={lobbyMessage.Type}, To={recipient.SteamId}, Size={buffer.Length}bytes",
+            "Network.Lobby");
 
         try
         {
             await _udpListener.SendAsync(buffer, buffer.Length, recipient.EndPoint);
-            _logService.Debug($"Direct lobby message sent: Type={lobbyMessage.Type}, To={recipient.SteamId}, EndPoint={recipient.EndPoint}", "Network.Lobby");
+            _logService.Debug(
+                $"Direct lobby message sent: Type={lobbyMessage.Type}, To={recipient.SteamId}, EndPoint={recipient.EndPoint}",
+                "Network.Lobby");
         }
         catch (Exception ex)
         {
-            _logService.Error($"Failed to send direct lobby message: To={recipient.SteamId}, Error={ex.Message}", "Network.Error");
+            _logService.Error($"Failed to send direct lobby message: To={recipient.SteamId}, Error={ex.Message}",
+                "Network.Error");
         }
     }
 
@@ -232,7 +247,8 @@ public sealed class NetworkService : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, nameof(NetworkService));
 
         var serverList = servers.ToList();
-        _logService.Debug($"Sending gameserver list: Count={serverList.Count}, To={recipient.SteamId}", "Network.Gameserver");
+        _logService.Debug($"Sending gameserver list: Count={serverList.Count}, To={recipient.SteamId}",
+            "Network.Gameserver");
 
         foreach (var server in serverList)
         {
@@ -247,7 +263,9 @@ public sealed class NetworkService : IDisposable
             try
             {
                 await _udpListener.SendAsync(buffer, buffer.Length, recipient.EndPoint);
-                _logService.Debug($"Gameserver sent: ID={server.Id}, Name={server.ServerName.ToStringUtf8()}, To={recipient.EndPoint}", "Network.Gameserver");
+                _logService.Debug(
+                    $"Gameserver sent: ID={server.Id}, Name={server.ServerName.ToStringUtf8()}, To={recipient.EndPoint}",
+                    "Network.Gameserver");
             }
             catch (Exception ex)
             {
@@ -259,7 +277,8 @@ public sealed class NetworkService : IDisposable
     /// <summary>
     ///     Sends a Network_pb message (ISteamNetworking)
     /// </summary>
-    public async Task SendNetworkMessageAsync(Network_pb networkMessage, Peer recipient, ulong senderId = MasterServerSteamId)
+    public async Task SendNetworkMessageAsync(Network_pb networkMessage, Peer recipient,
+        ulong senderId = MasterServerSteamId)
     {
         ObjectDisposedException.ThrowIf(_disposed, nameof(NetworkService));
 
@@ -271,7 +290,9 @@ public sealed class NetworkService : IDisposable
         };
 
         var buffer = message.ToByteArray();
-        _logService.Debug($"Sending Network_pb: Type={networkMessage.Type}, Channel={networkMessage.Channel}, To={recipient.SteamId}, Size={buffer.Length}bytes", "Network.P2P");
+        _logService.Debug(
+            $"Sending Network_pb: Type={networkMessage.Type}, Channel={networkMessage.Channel}, To={recipient.SteamId}, Size={buffer.Length}bytes",
+            "Network.P2P");
 
         try
         {
@@ -279,7 +300,8 @@ public sealed class NetworkService : IDisposable
         }
         catch (Exception ex)
         {
-            _logService.Error($"Failed to send Network_pb: To={recipient.SteamId}, Error={ex.Message}", "Network.Error");
+            _logService.Error($"Failed to send Network_pb: To={recipient.SteamId}, Error={ex.Message}",
+                "Network.Error");
             throw;
         }
     }
@@ -287,7 +309,8 @@ public sealed class NetworkService : IDisposable
     /// <summary>
     ///     Sends a Networking_Sockets message (ISteamNetworkingSockets)
     /// </summary>
-    public async Task SendNetworkingSocketsMessageAsync(Networking_Sockets networkingMessage, Peer recipient, ulong senderId = MasterServerSteamId)
+    public async Task SendNetworkingSocketsMessageAsync(Networking_Sockets networkingMessage, Peer recipient,
+        ulong senderId = MasterServerSteamId)
     {
         ObjectDisposedException.ThrowIf(_disposed, nameof(NetworkService));
 
@@ -299,7 +322,9 @@ public sealed class NetworkService : IDisposable
         };
 
         var buffer = message.ToByteArray();
-        _logService.Debug($"Sending NetworkingSockets: Type={networkingMessage.Type}, Port={networkingMessage.VirtualPort}, To={recipient.SteamId}, Size={buffer.Length}bytes", "Network.P2P");
+        _logService.Debug(
+            $"Sending NetworkingSockets: Type={networkingMessage.Type}, Port={networkingMessage.VirtualPort}, To={recipient.SteamId}, Size={buffer.Length}bytes",
+            "Network.P2P");
 
         try
         {
@@ -307,7 +332,8 @@ public sealed class NetworkService : IDisposable
         }
         catch (Exception ex)
         {
-            _logService.Error($"Failed to send NetworkingSockets: To={recipient.SteamId}, Error={ex.Message}", "Network.Error");
+            _logService.Error($"Failed to send NetworkingSockets: To={recipient.SteamId}, Error={ex.Message}",
+                "Network.Error");
             throw;
         }
     }
@@ -315,7 +341,8 @@ public sealed class NetworkService : IDisposable
     /// <summary>
     ///     Sends a Networking_Messages message
     /// </summary>
-    public async Task SendNetworkingMessagesAsync(Networking_Messages networkingMessage, Peer recipient, ulong senderId = MasterServerSteamId)
+    public async Task SendNetworkingMessagesAsync(Networking_Messages networkingMessage, Peer recipient,
+        ulong senderId = MasterServerSteamId)
     {
         ObjectDisposedException.ThrowIf(_disposed, nameof(NetworkService));
 
@@ -327,7 +354,9 @@ public sealed class NetworkService : IDisposable
         };
 
         var buffer = message.ToByteArray();
-        _logService.Debug($"Sending NetworkingMessages: Type={networkingMessage.Type}, Channel={networkingMessage.Channel}, To={recipient.SteamId}, Size={buffer.Length}bytes", "Network.P2P");
+        _logService.Debug(
+            $"Sending NetworkingMessages: Type={networkingMessage.Type}, Channel={networkingMessage.Channel}, To={recipient.SteamId}, Size={buffer.Length}bytes",
+            "Network.P2P");
 
         try
         {
@@ -335,7 +364,8 @@ public sealed class NetworkService : IDisposable
         }
         catch (Exception ex)
         {
-            _logService.Error($"Failed to send NetworkingMessages: To={recipient.SteamId}, Error={ex.Message}", "Network.Error");
+            _logService.Error($"Failed to send NetworkingMessages: To={recipient.SteamId}, Error={ex.Message}",
+                "Network.Error");
             throw;
         }
     }
