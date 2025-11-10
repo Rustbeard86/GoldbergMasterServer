@@ -177,7 +177,7 @@ public class MessageHandler(
     /// <summary>
     ///     Handles Gameserver registration and updates
     /// </summary>
-    private async Task HandleGameserverAsync(Common_Message message, Gameserver gameserver, IPEndPoint remoteEndPoint)
+    private async Task HandleGameserverAsync(Common_Message message, Gameserver gameserver, IPEndPoint _)
     {
         logService.Info(
             $"Gameserver update: ID={gameserver.Id}, Name={gameserver.ServerName.ToStringUtf8()}, Map={gameserver.MapName.ToStringUtf8()}, Players={gameserver.NumPlayers}/{gameserver.MaxPlayerCount}, AppID={gameserver.Appid}",
@@ -199,7 +199,7 @@ public class MessageHandler(
     /// <summary>
     ///     Handles Friend status and rich presence updates
     /// </summary>
-    private async Task HandleFriendAsync(Common_Message message, Friend friend, IPEndPoint remoteEndPoint)
+    private async Task HandleFriendAsync(Common_Message message, Friend friend, IPEndPoint _)
     {
         logService.Debug(
             $"Friend update: ID={friend.Id}, Name={friend.Name.ToStringUtf8()}, AppID={friend.Appid}, LobbyID={friend.LobbyId}",
@@ -213,7 +213,7 @@ public class MessageHandler(
     /// <summary>
     ///     Handles Auth_Ticket messages (primarily CANCEL)
     /// </summary>
-    private void HandleAuthTicket(Common_Message message, Auth_Ticket authTicket, IPEndPoint remoteEndPoint)
+    private void HandleAuthTicket(Common_Message message, Auth_Ticket authTicket, IPEndPoint _)
     {
         logService.Debug(
             $"Auth ticket message: Number={authTicket.Number}, Type={authTicket.Type}, SteamID={message.SourceId}",
@@ -228,7 +228,7 @@ public class MessageHandler(
     ///     Handles Friend_Messages (invites, etc.)
     /// </summary>
     private async Task HandleFriendMessagesAsync(Common_Message message, Friend_Messages friendMessages,
-        IPEndPoint remoteEndPoint)
+        IPEndPoint _)
     {
         logService.Debug($"Friend message: Type={friendMessages.Type}, From={message.SourceId}, To={message.DestId}",
             "MessageHandler");
@@ -256,7 +256,7 @@ public class MessageHandler(
     /// <summary>
     ///     Handles Network_pb messages (ISteamNetworking)
     /// </summary>
-    private async Task HandleNetworkPb(Common_Message message, Network_pb network, IPEndPoint remoteEndPoint)
+    private async Task HandleNetworkPb(Common_Message message, Network_pb network, IPEndPoint _)
     {
         logService.Debug(
             $"Network_pb message: Channel={network.Channel}, Type={network.Type}, DataSize={network.Data.Length}, From={message.SourceId}, To={message.DestId}",
@@ -334,7 +334,7 @@ public class MessageHandler(
     ///     Handles Networking_Sockets messages (ISteamNetworkingSockets)
     /// </summary>
     private async Task HandleNetworkingSockets(Common_Message message, Networking_Sockets networkingSockets,
-        IPEndPoint remoteEndPoint)
+        IPEndPoint _)
     {
         logService.Debug(
             $"NetworkingSockets message: Type={networkingSockets.Type}, VirtualPort={networkingSockets.VirtualPort}, ConnectionID={networkingSockets.ConnectionId}, MessageNum={networkingSockets.MessageNumber}, From={message.SourceId}, To={message.DestId}",
@@ -369,8 +369,8 @@ public class MessageHandler(
                     return;
                 }
 
-                // Create connection
-                var connectionId = p2pRelayManager.CreateOrGetConnection(
+                // Create connection - connection ID not needed here, tracking handled internally
+                p2pRelayManager.CreateOrGetConnection(
                     message.SourceId,
                     message.DestId,
                     sourcePeer.AppId,
@@ -395,7 +395,7 @@ public class MessageHandler(
                 }
 
                 // Update connection state
-                connectionId = p2pRelayManager.FindConnection(message.SourceId, message.DestId,
+                var connectionId = p2pRelayManager.FindConnection(message.SourceId, message.DestId,
                     ConnectionType.NetworkingSockets);
                 if (connectionId != 0) p2pRelayManager.UpdateConnectionState(connectionId, ConnectionState.Connected);
 
@@ -461,7 +461,7 @@ public class MessageHandler(
     ///     Handles Networking_Messages (another networking variant)
     /// </summary>
     private async Task HandleNetworkingMessages(Common_Message message, Networking_Messages networkingMessages,
-        IPEndPoint remoteEndPoint)
+        IPEndPoint _)
     {
         logService.Debug(
             $"NetworkingMessages message: Type={networkingMessages.Type}, Channel={networkingMessages.Channel}, From={networkingMessages.IdFrom}, To={message.DestId}",
@@ -486,8 +486,8 @@ public class MessageHandler(
         switch (networkingMessages.Type)
         {
             case Networking_Messages.Types.MessageType.ConnectionNew:
-                // New connection request
-                var connectionId = p2pRelayManager.CreateOrGetConnection(
+                // New connection request - connection ID not needed here, tracking handled internally
+                p2pRelayManager.CreateOrGetConnection(
                     message.SourceId,
                     message.DestId,
                     sourcePeer.AppId,
@@ -501,7 +501,7 @@ public class MessageHandler(
 
             case Networking_Messages.Types.MessageType.ConnectionAccept:
                 // Connection accepted
-                connectionId = p2pRelayManager.FindConnection(message.SourceId, message.DestId,
+                var connectionId = p2pRelayManager.FindConnection(message.SourceId, message.DestId,
                     ConnectionType.NetworkingMessages);
                 if (connectionId != 0) p2pRelayManager.UpdateConnectionState(connectionId, ConnectionState.Connected);
 
@@ -549,7 +549,7 @@ public class MessageHandler(
     ///     Handles Steam_Messages (chat, etc.)
     /// </summary>
     private async Task HandleSteamMessagesAsync(Common_Message message, Steam_Messages steamMessages,
-        IPEndPoint remoteEndPoint)
+        IPEndPoint _)
     {
         logService.Debug($"Steam message: Type={steamMessages.Type}, From={message.SourceId}, To={message.DestId}",
             "MessageHandler");
@@ -656,7 +656,7 @@ public class MessageHandler(
     /// <summary>
     ///     Handles Lobby creation, updates, and queries
     /// </summary>
-    private async Task HandleLobbyAsync(Common_Message message, Lobby lobby, IPEndPoint remoteEndPoint)
+    private async Task HandleLobbyAsync(Common_Message message, Lobby lobby, IPEndPoint _)
     {
         logService.Debug($"Received Lobby message from {message.SourceId} for room {lobby.RoomId}", "MessageHandler");
 
@@ -737,7 +737,7 @@ public class MessageHandler(
     ///     Handles Lobby messages like joins, leaves, chat, etc.
     /// </summary>
     private async Task HandleLobbyMessagesAsync(Common_Message message, Lobby_Messages lobbyMessages,
-        IPEndPoint remoteEndPoint)
+        IPEndPoint _)
     {
         logService.Debug(
             $"Received LobbyMessage (type: {lobbyMessages.Type}) from {message.SourceId} for lobby {lobbyMessages.Id}",
