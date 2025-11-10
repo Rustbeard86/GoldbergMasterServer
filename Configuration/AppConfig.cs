@@ -36,6 +36,9 @@ public sealed class LoggingConfig
 {
     public required LogLevelConfig LogLevel { get; init; }
     public required DebugConfig Debug { get; init; }
+    public string MinimumLevel { get; set; } = "Info";
+    public bool IncludeTimestamps { get; set; } = true;
+    public bool IncludeSourceInfo { get; set; } = true;
 }
 
 /// <summary>

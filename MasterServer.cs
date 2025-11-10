@@ -9,17 +9,21 @@ public sealed class MasterServer : IDisposable
 {
     private readonly Timer _cleanupTimer;
     private readonly LobbyManager _lobbyManager;
+    private readonly LogService _logService;
     private readonly MessageHandler _messageHandler;
     private readonly NetworkService _networkService;
     private readonly PeerManager _peerManager;
     private bool _disposed;
 
-    public MasterServer(int port)
+    public MasterServer(int port, LogService logService)
     {
-        _networkService = new NetworkService(port);
-        _peerManager = new PeerManager(TimeSpan.FromSeconds(30));
-        _lobbyManager = new LobbyManager(TimeSpan.FromMinutes(5)); // 5 minute timeout for deleted lobbies
-        _messageHandler = new MessageHandler(_peerManager, _networkService, _lobbyManager);
+        _logService = logService;
+        _networkService = new NetworkService(port, logService);
+        _peerManager = new PeerManager(TimeSpan.FromSeconds(30), logService);
+        _lobbyManager = new LobbyManager(TimeSpan.FromMinutes(5), logService);
+        _messageHandler = new MessageHandler(_peerManager, _networkService, _lobbyManager, logService);
+
+        _logService.Debug($"Initialized server on port {port}", "MasterServer");
 
         // Start a timer to clean up disconnected peers every 10 seconds
         _cleanupTimer = new Timer(_ => _peerManager.CleanupStaleMembers(), null,
@@ -43,6 +47,7 @@ public sealed class MasterServer : IDisposable
 
         if (disposing)
         {
+            _logService.Info("Disposing server resources...", "MasterServer");
             _cleanupTimer.Dispose();
             _networkService.Dispose();
             _peerManager.Shutdown();
@@ -57,19 +62,31 @@ public sealed class MasterServer : IDisposable
     /// </summary>
     public async Task StartListeningAsync()
     {
-        Console.WriteLine("[INFO] Master server listening...");
+        _logService.Info("Master server listening...", "MasterServer");
         try
         {
             while (!_disposed)
             {
                 var (buffer, endpoint) = await _networkService.ReceiveAsync();
                 // Process the packet without blocking the listener loop
-                _ = Task.Run(() => _messageHandler.HandleMessageAsync(buffer, endpoint));
+                _ = Task.Run(() => _messageHandler.HandleMessageAsync(buffer, endpoint))
+                    .ContinueWith(t =>
+                    {
+                        if (t.IsFaulted)
+                            _logService.Error($"Error processing message: {t.Exception?.GetBaseException().Message}",
+                                "MasterServer");
+                    });
             }
         }
         catch (ObjectDisposedException)
         {
             // Server is shutting down, this is normal
+            _logService.Info("Server shutting down...", "MasterServer");
+        }
+        catch (Exception ex)
+        {
+            _logService.Critical($"Unexpected error in server loop: {ex.Message}", "MasterServer");
+            throw;
         }
     }
 }

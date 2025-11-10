@@ -12,12 +12,15 @@ public class LobbyManager
 {
     private readonly ConcurrentDictionary<ulong, Lobby> _lobbies = new();
     private readonly TimeSpan _lobbyTimeout;
+    private readonly LogService _logService;
     private readonly ConcurrentDictionary<ulong, HashSet<ulong>> _userLobbies = new();
     private bool _isShutdown;
 
-    public LobbyManager(TimeSpan lobbyTimeout)
+    public LobbyManager(TimeSpan lobbyTimeout, LogService logService)
     {
         _lobbyTimeout = lobbyTimeout;
+        _logService = logService;
+        _logService.Debug($"Lobby manager initialized with {_lobbyTimeout.TotalMinutes}m timeout", "LobbyManager");
         // Start cleanup task
         _ = Task.Run(CleanupLoopAsync);
     }
@@ -29,6 +32,7 @@ public class LobbyManager
     {
         if (_isShutdown) return Task.FromResult(false);
 
+        var isNew = !_lobbies.ContainsKey(lobby.RoomId);
         _lobbies.AddOrUpdate(lobby.RoomId, lobby, (_, _) => lobby);
 
         // Update user lobby mapping
@@ -41,6 +45,11 @@ public class LobbyManager
                 return rooms;
             });
 
+        if (isNew)
+            _logService.Debug($"Created new lobby {lobby.RoomId} for app {lobby.Appid}", "LobbyManager");
+        else
+            _logService.Debug($"Updated lobby {lobby.RoomId}", "LobbyManager");
+
         return Task.FromResult(true);
     }
 
@@ -50,6 +59,77 @@ public class LobbyManager
     public IEnumerable<Lobby> GetLobbiesForApp(uint appId)
     {
         return _lobbies.Values.Where(l => l.Appid == appId && !l.Deleted);
+    }
+
+    /// <summary>
+    ///     Finds lobbies matching specific criteria
+    /// </summary>
+    public IEnumerable<Lobby> FindLobbies(uint appId, IDictionary<string, ByteString>? filters = null,
+        int maxResults = 50)
+    {
+        if (_isShutdown) return [];
+
+        // Build the query
+        IEnumerable<Lobby> query = _lobbies.Values;
+
+        // Basic filters
+        query = query.Where(l => l.Appid == appId && l is { Deleted: false, Joinable: true });
+
+        // Filter by lobby type if specified in metadata
+        if (filters?.TryGetValue("lobby_type", out var lobbyTypeBytes) == true)
+        {
+            var lobbyType = BitConverter.ToUInt32(lobbyTypeBytes.ToByteArray());
+            query = query.Where(l => l.Type == lobbyType);
+            _logService.Debug($"Applied lobby type filter: {lobbyType}", "LobbyManager");
+        }
+
+        // Filter by member count/limits
+        query = query.Where(l => l.MemberLimit == 0 || l.Members.Count < l.MemberLimit);
+
+        // Apply custom metadata filters if provided
+        if (filters?.Any() == true)
+            query = query.Where(lobby =>
+                filters.All(filter =>
+                {
+                    // Skip special filter keys that we handle separately
+                    if (filter.Key == "lobby_type") return true;
+
+                    return lobby.Values.TryGetValue(filter.Key, out var value) &&
+                           value.Equals(filter.Value);
+                }));
+
+        // Materialize the filtered results once
+        var matchingLobbies = query
+            .OrderByDescending(l => l.Members.Count)
+            .ThenByDescending(l => l.Gameserver != null)
+            .Take(maxResults)
+            .ToList();
+
+        _logService.Debug($"Found {matchingLobbies.Count} lobbies matching criteria for app {appId}", "LobbyManager");
+
+        return matchingLobbies;
+    }
+
+    /// <summary>
+    ///     Gets all lobbies that a user is a member of
+    /// </summary>
+    public IEnumerable<Lobby> GetUserLobbies(ulong userId)
+    {
+        if (_isShutdown) return [];
+
+        if (_userLobbies.TryGetValue(userId, out var lobbyIds))
+        {
+            var userLobbies = lobbyIds
+                .Select(id => _lobbies.TryGetValue(id, out var lobby) ? lobby : null)
+                .Where(l => l is { Deleted: false })
+                .Cast<Lobby>()
+                .ToList();
+
+            _logService.Debug($"Found {userLobbies.Count} active lobbies for user {userId}", "LobbyManager");
+            return userLobbies;
+        }
+
+        return [];
     }
 
     /// <summary>
@@ -71,10 +151,19 @@ public class LobbyManager
 
         if (!lobby.Joinable || lobby.Deleted ||
             (lobby.MemberLimit > 0 && lobby.Members.Count >= lobby.MemberLimit))
+        {
+            _logService.Debug($"Join failed for user {member.Id} to lobby {roomId}: " +
+                              $"Joinable={lobby.Joinable}, Deleted={lobby.Deleted}, " +
+                              $"Members={lobby.Members.Count}/{lobby.MemberLimit}", "LobbyManager");
             return Task.FromResult(false);
+        }
 
         // Add member if not already present
-        if (lobby.Members.All(m => m.Id != member.Id)) lobby.Members.Add(member);
+        if (lobby.Members.All(m => m.Id != member.Id))
+        {
+            lobby.Members.Add(member);
+            _logService.Debug($"User {member.Id} joined lobby {roomId}", "LobbyManager");
+        }
 
         // Update user's lobby list
         _userLobbies.AddOrUpdate(
@@ -101,17 +190,20 @@ public class LobbyManager
         if (member != null)
         {
             lobby.Members.Remove(member);
+            _logService.Debug($"User {userId} left lobby {roomId}", "LobbyManager");
 
             // If owner left and there are other members, transfer ownership
             if (userId == lobby.Owner && lobby.Members.Count != 0)
             {
                 lobby.Owner = lobby.Members.First().Id;
+                _logService.Debug($"Transferred lobby {roomId} ownership to {lobby.Owner}", "LobbyManager");
             }
             // If no members left, mark for deletion
             else if (lobby.Members.Count == 0)
             {
                 lobby.Deleted = true;
                 lobby.TimeDeleted = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                _logService.Debug($"Marked empty lobby {roomId} for deletion", "LobbyManager");
             }
 
             // Remove from user's lobby list
@@ -139,6 +231,7 @@ public class LobbyManager
         if (member != null)
         {
             foreach (var (key, value) in values) member.Values[key] = value;
+            _logService.Debug($"Updated data for user {userId} in lobby {roomId}", "LobbyManager");
             return Task.FromResult(true);
         }
 
@@ -155,6 +248,7 @@ public class LobbyManager
 
         lobby.Deleted = true;
         lobby.TimeDeleted = (ulong)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        _logService.Debug($"Marked lobby {roomId} as deleted", "LobbyManager");
         return Task.FromResult(true);
     }
 
@@ -172,7 +266,11 @@ public class LobbyManager
                 .ToList();
 
             // Remove old lobbies
-            foreach (var roomId in oldLobbies) _lobbies.TryRemove(roomId, out _);
+            foreach (var roomId in oldLobbies)
+            {
+                _lobbies.TryRemove(roomId, out _);
+                _logService.Debug($"Removed expired lobby {roomId}", "LobbyManager");
+            }
 
             await Task.Delay(TimeSpan.FromMinutes(1));
         }
@@ -184,5 +282,6 @@ public class LobbyManager
     public void Shutdown()
     {
         _isShutdown = true;
+        _logService.Info("Lobby manager shutting down", "LobbyManager");
     }
 }

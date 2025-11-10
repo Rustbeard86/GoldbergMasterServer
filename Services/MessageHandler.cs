@@ -8,13 +8,19 @@ namespace GoldbergMasterServer.Services;
 /// <summary>
 ///     Handles protocol-specific message processing
 /// </summary>
-public class MessageHandler(PeerManager peerManager, NetworkService networkService, LobbyManager lobbyManager)
+public class MessageHandler(
+    PeerManager peerManager,
+    NetworkService networkService,
+    LobbyManager lobbyManager,
+    LogService logService)
 {
     public async Task HandleMessageAsync(byte[] buffer, IPEndPoint remoteEndPoint)
     {
         try
         {
             var message = Common_Message.Parser.ParseFrom(buffer);
+
+            logService.Debug($"Received message type {message.MessagesCase} from {message.SourceId}", "MessageHandler");
 
             // Use a switch to handle all relevant message types
             switch (message.MessagesCase)
@@ -38,17 +44,17 @@ public class MessageHandler(PeerManager peerManager, NetworkService networkServi
                     break;
 
                 default:
-                    Console.WriteLine($"[WARN] Unhandled message type: {message.MessagesCase}");
+                    logService.Warning($"Unhandled message type: {message.MessagesCase}", "MessageHandler");
                     break;
             }
         }
         catch (InvalidProtocolBufferException)
         {
-            // Not a valid proto message, ignore
+            logService.Warning($"Invalid protocol buffer message from {remoteEndPoint}", "MessageHandler");
         }
         catch (Exception e)
         {
-            Console.WriteLine($"[WARN] Error processing packet: {e.Message}");
+            logService.Error($"Error processing packet: {e.Message}", "MessageHandler");
         }
     }
 
@@ -74,16 +80,79 @@ public class MessageHandler(PeerManager peerManager, NetworkService networkServi
     /// </summary>
     private async Task HandleLobbyAsync(Common_Message message, Lobby lobby, IPEndPoint remoteEndPoint)
     {
-        Console.WriteLine($"[INFO] Received Lobby message from {message.SourceId} for room {lobby.RoomId}");
+        logService.Debug($"Received Lobby message from {message.SourceId} for room {lobby.RoomId}", "MessageHandler");
+
+        var sender = peerManager.GetPeer(message.SourceId);
+        if (sender == null)
+        {
+            logService.Warning($"Unknown peer {message.SourceId} sent lobby message", "MessageHandler");
+            return;
+        }
+
+        // If RoomId is 0, this is a lobby query
+        if (lobby.RoomId == 0)
+        {
+            await HandleLobbyQueryAsync(message, lobby, sender);
+            return;
+        }
 
         // Update lobby owner if not set
         if (lobby.Owner == 0) lobby.Owner = message.SourceId;
 
         // Handle lobby based on its state
         if (lobby.Deleted)
+        {
             await lobbyManager.DeleteLobbyAsync(lobby.RoomId);
+
+            // Broadcast deletion to all members
+            var membersToNotify = GetOnlineMembers(lobby.Members);
+            if (membersToNotify.Count != 0) await networkService.BroadcastLobbyUpdateAsync(lobby, membersToNotify);
+        }
         else
-            await lobbyManager.CreateOrUpdateLobbyAsync(lobby);
+        {
+            var success = await lobbyManager.CreateOrUpdateLobbyAsync(lobby);
+            if (success)
+            {
+                // Get all online members
+                var membersToNotify = GetOnlineMembers(lobby.Members);
+                if (membersToNotify.Count != 0)
+                    // Broadcast update to all members
+                    await networkService.BroadcastLobbyUpdateAsync(lobby, membersToNotify);
+            }
+        }
+    }
+
+    /// <summary>
+    ///     Handles lobby query messages and sends responses
+    /// </summary>
+    private async Task HandleLobbyQueryAsync(Common_Message message, Lobby queryLobby, Peer sender)
+    {
+        logService.Debug($"Processing lobby query from {message.SourceId} for app {queryLobby.Appid}",
+            "MessageHandler");
+
+        // Get matching lobbies
+        var matchingLobbies = lobbyManager.FindLobbies(queryLobby.Appid, queryLobby.Values);
+
+        // Send each matching lobby as a separate message
+        foreach (var lobby in matchingLobbies)
+        {
+            var responseMessage = new Common_Message
+            {
+                SourceId = message.DestId, // Server's ID
+                DestId = message.SourceId, // Querying peer's ID
+                Lobby = lobby
+            };
+
+            var buffer = responseMessage.ToByteArray();
+            try
+            {
+                await networkService.SendLobbyMessageAsync(new Lobby_Messages { Id = lobby.RoomId }, sender);
+            }
+            catch (Exception ex)
+            {
+                logService.Error($"Failed to send lobby query response: {ex.Message}", "MessageHandler");
+            }
+        }
     }
 
     /// <summary>
@@ -92,15 +161,26 @@ public class MessageHandler(PeerManager peerManager, NetworkService networkServi
     private async Task HandleLobbyMessagesAsync(Common_Message message, Lobby_Messages lobbyMessages,
         IPEndPoint remoteEndPoint)
     {
-        Console.WriteLine(
-            $"[INFO] Received LobbyMessage (type: {lobbyMessages.Type}) from {message.SourceId} for lobby {lobbyMessages.Id}");
+        logService.Debug(
+            $"Received LobbyMessage (type: {lobbyMessages.Type}) from {message.SourceId} for lobby {lobbyMessages.Id}",
+            "MessageHandler");
 
         var lobby = lobbyManager.GetLobby(lobbyMessages.Id);
         if (lobby == null)
         {
-            Console.WriteLine($"[WARN] Lobby {lobbyMessages.Id} not found");
+            logService.Warning($"Lobby {lobbyMessages.Id} not found", "MessageHandler");
             return;
         }
+
+        var sender = peerManager.GetPeer(message.SourceId);
+        if (sender == null)
+        {
+            logService.Warning($"Unknown peer {message.SourceId} sent lobby message", "MessageHandler");
+            return;
+        }
+
+        // Get all online members for broadcasting
+        var onlineMembers = GetOnlineMembers(lobby.Members);
 
         switch (lobbyMessages.Type)
         {
@@ -109,34 +189,65 @@ public class MessageHandler(PeerManager peerManager, NetworkService networkServi
                 {
                     Id = message.SourceId
                 };
-                await lobbyManager.JoinLobbyAsync(lobbyMessages.Id, member);
+                if (await lobbyManager.JoinLobbyAsync(lobbyMessages.Id, member))
+                {
+                    if (onlineMembers.Count != 0)
+                        // Broadcast join to all members
+                        await networkService.BroadcastLobbyMessageAsync(lobbyMessages, message.SourceId, onlineMembers);
+                    // Send current lobby state to the new member
+                    await networkService.BroadcastLobbyUpdateAsync(lobby, new[] { sender });
+                }
+
                 break;
 
             case Lobby_Messages.Types.MessageType.Leave:
-                await lobbyManager.LeaveLobbyAsync(lobbyMessages.Id, message.SourceId);
+                if (await lobbyManager.LeaveLobbyAsync(lobbyMessages.Id, message.SourceId) && onlineMembers.Count != 0)
+                    // Broadcast leave to remaining members
+                    await networkService.BroadcastLobbyMessageAsync(lobbyMessages, message.SourceId, onlineMembers);
                 break;
 
             case Lobby_Messages.Types.MessageType.ChangeOwner:
                 if (lobby.Owner == message.SourceId) // Only current owner can change ownership
                 {
                     lobby.Owner = lobbyMessages.Idata;
-                    await lobbyManager.CreateOrUpdateLobbyAsync(lobby);
+                    if (await lobbyManager.CreateOrUpdateLobbyAsync(lobby) && onlineMembers.Count != 0)
+                        // Broadcast owner change
+                        await networkService.BroadcastLobbyMessageAsync(lobbyMessages, message.SourceId, onlineMembers);
+                }
+                else
+                {
+                    logService.Warning(
+                        $"Non-owner {message.SourceId} attempted to change lobby {lobbyMessages.Id} ownership",
+                        "MessageHandler");
                 }
 
                 break;
 
             case Lobby_Messages.Types.MessageType.MemberData:
-                if (lobbyMessages.Map != null)
-                    await lobbyManager.UpdateMemberDataAsync(lobbyMessages.Id, message.SourceId, lobbyMessages.Map);
+                if (lobbyMessages.Map != null &&
+                    await lobbyManager.UpdateMemberDataAsync(lobbyMessages.Id, message.SourceId, lobbyMessages.Map) &&
+                    onlineMembers.Count != 0)
+                    // Broadcast member data update
+                    await networkService.BroadcastLobbyMessageAsync(lobbyMessages, message.SourceId, onlineMembers);
                 break;
 
             case Lobby_Messages.Types.MessageType.ChatMessage:
-                // Chat messages are handled by broadcasting the message directly to other members
-                // The Goldberg emulator handles displaying the message on the client side
+                if (onlineMembers.Count != 0)
+                    // Forward chat message to all other members
+                    await networkService.BroadcastLobbyMessageAsync(lobbyMessages, message.SourceId, onlineMembers);
                 break;
         }
+    }
 
-        // Broadcast lobby updates to all members
-        // TODO: Implement lobby state broadcast
+    /// <summary>
+    ///     Gets a list of online peers for the given lobby members
+    /// </summary>
+    private List<Peer> GetOnlineMembers(IEnumerable<Lobby.Types.Member> members)
+    {
+        return members
+            .Select(m => peerManager.GetPeer(m.Id))
+            .Where(p => p != null)
+            .Cast<Peer>() // Convert from Peer? to Peer after filtering nulls
+            .ToList();
     }
 }
