@@ -66,10 +66,15 @@ public class GameserverManager
     /// <summary>
     ///     Gets a specific server by ID
     /// </summary>
+    /// <param name="serverId">The unique server ID to look up</param>
+    /// <returns>The gameserver if found, null if not found or shutdown</returns>
+    /// <remarks>
+    ///     Used by server browser queries and admin panel (Phase 2.2).
+    ///     Currently unused but part of planned server discovery API.
+    /// </remarks>
     public Gameserver? GetServer(ulong serverId)
     {
-        if (_isShutdown) return null;
-        return _gameservers.GetValueOrDefault(serverId);
+        return _isShutdown ? null : _gameservers.GetValueOrDefault(serverId);
     }
 
     /// <summary>
@@ -100,6 +105,20 @@ public class GameserverManager
     /// <summary>
     ///     Finds servers matching specific criteria
     /// </summary>
+    /// <param name="appId">The Steam AppID to filter by</param>
+    /// <param name="mapName">Optional: Filter by map name (partial match, case-insensitive)</param>
+    /// <param name="hasPassword">Optional: Filter by password protection status</param>
+    /// <param name="minPlayers">Optional: Minimum number of players</param>
+    /// <param name="maxPlayers">Optional: Maximum player capacity</param>
+    /// <param name="dedicatedOnly">Optional: Only return dedicated servers</param>
+    /// <param name="secureOnly">Optional: Only return VAC-secured servers</param>
+    /// <param name="maxResults">Maximum number of results to return (default: 100)</param>
+    /// <returns>Enumerable of gameservers matching the criteria</returns>
+    /// <remarks>
+    ///     Advanced server filtering for server browser (Phase 2.2).
+    ///     Currently unused but will be essential for client server discovery.
+    ///     Supports multiple filter combinations for flexible queries.
+    /// </remarks>
     public IEnumerable<Gameserver> FindServers(
         uint appId,
         string? mapName = null,
@@ -140,6 +159,13 @@ public class GameserverManager
     /// <summary>
     ///     Marks a server as offline
     /// </summary>
+    /// <param name="serverId">The server ID to mark as offline</param>
+    /// <returns>True if server was found and marked offline, false otherwise</returns>
+    /// <remarks>
+    ///     Used for graceful server shutdown and admin tools (Phase 2.2).
+    ///     Currently unused but allows servers to explicitly mark themselves
+    ///     as offline before automatic cleanup occurs.
+    /// </remarks>
     public bool MarkServerOffline(ulong serverId)
     {
         if (_isShutdown) return false;
@@ -189,6 +215,12 @@ public class GameserverManager
     /// <summary>
     ///     Gets total server count
     /// </summary>
+    /// <returns>Count of active (non-offline) servers across all apps</returns>
+    /// <remarks>
+    ///     Used for admin dashboard and monitoring (Phase 9).
+    ///     Currently unused but provides global server statistics.
+    ///     Note: Can be expensive with many servers; consider caching if needed.
+    /// </remarks>
     public int GetTotalServerCount()
     {
         return _gameservers.Count(s => !s.Value.Offline);
@@ -197,6 +229,13 @@ public class GameserverManager
     /// <summary>
     ///     Gets server count for a specific app
     /// </summary>
+    /// <param name="appId">The Steam AppID to count servers for</param>
+    /// <returns>Count of active servers for the specified app</returns>
+    /// <remarks>
+    ///     Used for statistics and monitoring dashboards (Phase 9).
+    ///     Currently unused but provides per-app server statistics.
+    ///     Calls GetServersForApp() internally, which is thread-safe.
+    /// </remarks>
     public int GetServerCountForApp(uint appId)
     {
         return GetServersForApp(appId).Count();
