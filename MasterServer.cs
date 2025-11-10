@@ -8,6 +8,7 @@ namespace GoldbergMasterServer;
 public sealed class MasterServer : IDisposable
 {
     private readonly Timer _cleanupTimer;
+    private readonly LobbyManager _lobbyManager;
     private readonly MessageHandler _messageHandler;
     private readonly NetworkService _networkService;
     private readonly PeerManager _peerManager;
@@ -17,7 +18,8 @@ public sealed class MasterServer : IDisposable
     {
         _networkService = new NetworkService(port);
         _peerManager = new PeerManager(TimeSpan.FromSeconds(30));
-        _messageHandler = new MessageHandler(_peerManager, _networkService);
+        _lobbyManager = new LobbyManager(TimeSpan.FromMinutes(5)); // 5 minute timeout for deleted lobbies
+        _messageHandler = new MessageHandler(_peerManager, _networkService, _lobbyManager);
 
         // Start a timer to clean up disconnected peers every 10 seconds
         _cleanupTimer = new Timer(_ => _peerManager.CleanupStaleMembers(), null,
@@ -44,6 +46,7 @@ public sealed class MasterServer : IDisposable
             _cleanupTimer.Dispose();
             _networkService.Dispose();
             _peerManager.Shutdown();
+            _lobbyManager.Shutdown();
         }
 
         _disposed = true;

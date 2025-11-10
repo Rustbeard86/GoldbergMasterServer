@@ -17,6 +17,7 @@
 
 	<ItemGroup>
 		<Folder Include="Network\Messages\" />
+		<Folder Include="Emulation Reference %28Reference Only%29\" />
 		<Folder Include="Protos\" />
 	</ItemGroup>
 
