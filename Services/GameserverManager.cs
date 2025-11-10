@@ -8,18 +8,17 @@ namespace GoldbergMasterServer.Services;
 /// </summary>
 public class GameserverManager
 {
-    private readonly LogService _logService;
     private readonly ConcurrentDictionary<ulong, Gameserver> _gameservers = new();
-    private readonly ConcurrentDictionary<uint, HashSet<ulong>> _serversByApp = new();
-    private readonly TimeSpan _serverTimeout;
     private readonly object _lock = new();
+    private readonly LogService _logService;
+    private readonly ConcurrentDictionary<uint, HashSet<ulong>> _serversByApp = new();
     private bool _isShutdown;
 
     public GameserverManager(TimeSpan serverTimeout, LogService logService)
     {
-        _serverTimeout = serverTimeout;
         _logService = logService;
-        _logService.Debug($"Gameserver manager initialized with {_serverTimeout.TotalSeconds}s timeout", "GameserverManager");
+        _logService.Debug($"Gameserver manager initialized with {serverTimeout.TotalSeconds}s timeout",
+            "GameserverManager");
     }
 
     /// <summary>
@@ -32,7 +31,8 @@ public class GameserverManager
         // Validate required fields
         if (server.Id == 0 || server.Appid == 0)
         {
-            _logService.Warning($"Invalid server registration: ID={server.Id}, AppID={server.Appid}", "GameserverManager");
+            _logService.Warning($"Invalid server registration: ID={server.Id}, AppID={server.Appid}",
+                "GameserverManager");
             return false;
         }
 
@@ -47,21 +47,18 @@ public class GameserverManager
                 serverSet = [];
                 _serversByApp[server.Appid] = serverSet;
             }
+
             serverSet.Add(server.Id);
         }
 
         if (isNew)
-        {
             _logService.Info(
                 $"New gameserver registered: ID={server.Id}, Name={server.ServerName.ToStringUtf8()}, AppID={server.Appid}, Players={server.NumPlayers}/{server.MaxPlayerCount}",
                 "GameserverManager");
-        }
         else
-        {
             _logService.Debug(
                 $"Gameserver updated: ID={server.Id}, Players={server.NumPlayers}/{server.MaxPlayerCount}, Map={server.MapName.ToStringUtf8()}",
                 "GameserverManager");
-        }
 
         return true;
     }
@@ -72,7 +69,7 @@ public class GameserverManager
     public Gameserver? GetServer(ulong serverId)
     {
         if (_isShutdown) return null;
-        return _gameservers.TryGetValue(serverId, out var server) ? server : null;
+        return _gameservers.GetValueOrDefault(serverId);
     }
 
     /// <summary>
@@ -82,16 +79,22 @@ public class GameserverManager
     {
         if (_isShutdown) return [];
 
+        List<ulong> serverIds;
+
         lock (_lock)
         {
-            if (!_serversByApp.TryGetValue(appId, out var serverIds))
+            if (!_serversByApp.TryGetValue(appId, out var serverSet))
                 return [];
 
-            return serverIds
-                .Select(id => _gameservers.TryGetValue(id, out var server) ? server : null)
-                .Where(s => s != null && !s.Offline)
-                .Cast<Gameserver>();
+            // Create a copy of the IDs while inside the lock to avoid enumeration issues
+            serverIds = [..serverSet];
         }
+
+        // Process outside the lock to minimize lock contention
+        return serverIds
+            .Select(id => _gameservers.GetValueOrDefault(id))
+            .Where(s => s is { Offline: false })
+            .Cast<Gameserver>();
     }
 
     /// <summary>
@@ -113,7 +116,8 @@ public class GameserverManager
 
         // Apply filters
         if (!string.IsNullOrEmpty(mapName))
-            servers = servers.Where(s => s.MapName.ToStringUtf8().Contains(mapName, StringComparison.OrdinalIgnoreCase));
+            servers = servers.Where(s =>
+                s.MapName.ToStringUtf8().Contains(mapName, StringComparison.OrdinalIgnoreCase));
 
         if (hasPassword.HasValue)
             servers = servers.Where(s => s.PasswordProtected == hasPassword.Value);
@@ -161,34 +165,25 @@ public class GameserverManager
 
         // Remove servers marked as offline (we don't have a timestamp, so remove immediately)
         foreach (var (serverId, server) in _gameservers)
-        {
             if (server.Offline)
-            {
                 serversToRemove.Add(serverId);
-            }
-        }
 
         // Remove offline servers
         foreach (var serverId in serversToRemove)
-        {
             if (_gameservers.TryRemove(serverId, out var server))
             {
                 lock (_lock)
                 {
-                    if (_serversByApp.TryGetValue(server.Appid, out var serverSet))
-                    {
-                        serverSet.Remove(serverId);
-                    }
+                    if (_serversByApp.TryGetValue(server.Appid, out var serverSet)) serverSet.Remove(serverId);
                 }
 
-                _logService.Info($"Removed offline gameserver: ID={serverId}, Name={server.ServerName.ToStringUtf8()}", "GameserverManager");
+                _logService.Info($"Removed offline gameserver: ID={serverId}, Name={server.ServerName.ToStringUtf8()}",
+                    "GameserverManager");
             }
-        }
 
         if (serversToRemove.Count > 0)
-        {
-            _logService.Info($"Cleanup complete: Removed {serversToRemove.Count} offline gameserver(s)", "GameserverManager");
-        }
+            _logService.Info($"Cleanup complete: Removed {serversToRemove.Count} offline gameserver(s)",
+                "GameserverManager");
     }
 
     /// <summary>
@@ -214,7 +209,12 @@ public class GameserverManager
     {
         _isShutdown = true;
         _logService.Info("Gameserver manager shutting down", "GameserverManager");
+
         _gameservers.Clear();
-        _serversByApp.Clear();
+
+        lock (_lock)
+        {
+            _serversByApp.Clear();
+        }
     }
 }
